@@ -33,10 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { supabase } from "./path-to-supabase-client"; // Adjust the import path
-import AIGeneratedContent from "./AIGeneratedContent"; // Adjust the import path
 
-// Node interface
 interface Node {
   id: string;
   type: "person" | "event" | "place" | "document" | "concept";
@@ -50,7 +47,6 @@ interface Node {
   isEditing?: boolean;
 }
 
-// Edge interface
 interface Edge {
   id: string;
   source: string;
@@ -60,7 +56,86 @@ interface Edge {
   isEditing?: boolean;
 }
 
-// Function to define node shapes based on type
+interface KnowledgeGraphProps {
+  nodes?: Node[];
+  edges?: Edge[];
+  onNodeSelect?: (nodeId: string) => void;
+  onNodeCreate?: (node: Node) => void;
+  onNodeUpdate?: (node: Node) => void;
+  onNodeDelete?: (nodeId: string) => void;
+  onEdgeCreate?: (edge: Edge) => void;
+  onEdgeUpdate?: (edge: Edge) => void;
+  onEdgeDelete?: (edgeId: string) => void;
+}
+
+const defaultNodes: Node[] = [
+  {
+    id: "1",
+    type: "person",
+    label: "Alexander Hamilton",
+    x: 100,
+    y: 100,
+    description: "Founding Father",
+  },
+  {
+    id: "2",
+    type: "event",
+    label: "Constitutional Convention",
+    x: 300,
+    y: 150,
+    date: "1787-05-25",
+  },
+  {
+    id: "3",
+    type: "place",
+    label: "Philadelphia",
+    x: 200,
+    y: 250,
+    description: "City in Pennsylvania",
+  },
+  {
+    id: "4",
+    type: "person",
+    label: "George Washington",
+    x: 400,
+    y: 200,
+    description: "First US President",
+  },
+  {
+    id: "5",
+    type: "event",
+    label: "Battle of Yorktown",
+    x: 250,
+    y: 350,
+    date: "1781-09-28",
+  },
+  {
+    id: "6",
+    type: "document",
+    label: "The Federalist Papers",
+    x: 150,
+    y: 180,
+    description: "Collection of essays",
+  },
+  {
+    id: "7",
+    type: "concept",
+    label: "Republicanism",
+    x: 350,
+    y: 300,
+    description: "Political ideology",
+  },
+];
+
+const defaultEdges: Edge[] = [
+  { id: "e1", source: "1", target: "2", relationship: "Attended" },
+  { id: "e2", source: "2", target: "3", relationship: "Took place in" },
+  { id: "e3", source: "4", target: "2", relationship: "Presided over" },
+  { id: "e4", source: "4", target: "5", relationship: "Commanded at" },
+  { id: "e5", source: "1", target: "6", relationship: "Wrote" },
+  { id: "e6", source: "6", target: "7", relationship: "Promoted" },
+];
+
 const getNodeShape = (type: string): string => {
   switch (type) {
     case "person":
@@ -78,10 +153,21 @@ const getNodeShape = (type: string): string => {
   }
 };
 
-const KnowledgeGraph: React.FC = () => {
+const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
+  nodes = defaultNodes,
+  edges = defaultEdges,
+  onNodeSelect = () => {},
+  onNodeCreate = () => {},
+  onNodeUpdate = () => {},
+  onNodeDelete = () => {},
+  onEdgeCreate = () => {},
+  onEdgeUpdate = () => {},
+  onEdgeDelete = () => {},
+}) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const width = 800;
   const height = 600;
@@ -89,8 +175,8 @@ const KnowledgeGraph: React.FC = () => {
     source: string | null;
     target: string | null;
   }>({ source: null, target: null });
-  const [nodeList, setNodeList] = useState<Node[]>([]);
-  const [edgeList, setEdgeList] = useState<Edge[]>([]);
+  const [nodeList, setNodeList] = useState<Node[]>(nodes);
+  const [edgeList, setEdgeList] = useState<Edge[]>(edges);
   const [activeNode, setActiveNode] = useState<Node | null>(null);
   const [activeEdge, setActiveEdge] = useState<Edge | null>(null);
   const [showNodeDialog, setShowNodeDialog] = useState(false);
@@ -113,138 +199,62 @@ const KnowledgeGraph: React.FC = () => {
     edge: Edge;
   } | null>(null);
   const [showMidEdgeMenu, setShowMidEdgeMenu] = useState(false);
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showAIGenerator, setShowAIGenerator] = useState(false);
 
-  // Fetch nodes and edges from Supabase on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      const { data: nodesData, error: nodesError } = await supabase
-        .from("nodes")
-        .select("*");
-      if (nodesError) {
-        console.error("Error fetching nodes:", nodesError);
-      } else {
-        setNodeList(nodesData);
-      }
-
-      const { data: edgesData, error: edgesError } = await supabase
-        .from("edges")
-        .select("*");
-      if (edgesError) {
-        console.error("Error fetching edges:", edgesError);
-      } else {
-        setEdgeList(edgesData);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  // Update visualization when nodeList, edgeList, or other relevant states change
+  // Recreate visualization when nodes or edges change
   useEffect(() => {
     createVisualization();
-  }, [nodeList, edgeList, hoveredNode, hoveredEdge, focusedNodeId, searchTerm]);
+  }, [nodeList, edgeList, hoveredNode, hoveredEdge]);
 
-  // Handle node form submission (create or update)
-  const handleNodeFormSubmit = async () => {
+  const handleNodeFormSubmit = () => {
     if (!activeNode) return;
 
     if (activeNode.isNew) {
       const newNode = { ...activeNode, isNew: false, isEditing: false };
-      const { error } = await supabase.from("nodes").insert([newNode]).select();
-      if (error) {
-        console.error("Error inserting node:", error);
-      } else {
-        setNodeList([...nodeList, newNode]);
-      }
+      setNodeList([...nodeList, newNode]);
+      onNodeCreate(newNode);
     } else {
-      const updatedNode = { ...activeNode, isEditing: false };
-      const { error } = await supabase
-        .from("nodes")
-        .update(updatedNode)
-        .eq("id", updatedNode.id);
-      if (error) {
-        console.error("Error updating node:", error);
-      } else {
-        setNodeList(
-          nodeList.map((n) => (n.id === updatedNode.id ? updatedNode : n)),
-        );
-      }
+      const updatedNodes = nodeList.map((n) =>
+        n.id === activeNode.id ? { ...activeNode, isEditing: false } : n,
+      );
+      setNodeList(updatedNodes);
+      onNodeUpdate(activeNode);
     }
     setShowNodeDialog(false);
     setActiveNode(null);
   };
 
-  // Handle edge form submission (create or update)
-  const handleEdgeFormSubmit = async () => {
+  const handleEdgeFormSubmit = () => {
     if (!activeEdge) return;
 
     if (activeEdge.isNew) {
       const newEdge = { ...activeEdge, isNew: false, isEditing: false };
-      const { error } = await supabase.from("edges").insert([newEdge]).select();
-      if (error) {
-        console.error("Error inserting edge:", error);
-      } else {
-        setEdgeList([...edgeList, newEdge]);
-      }
+      setEdgeList([...edgeList, newEdge]);
+      onEdgeCreate(newEdge);
     } else {
-      const updatedEdge = { ...activeEdge, isEditing: false };
-      const { error } = await supabase
-        .from("edges")
-        .update(updatedEdge)
-        .eq("id", updatedEdge.id);
-      if (error) {
-        console.error("Error updating edge:", error);
-      } else {
-        setEdgeList(
-          edgeList.map((e) => (e.id === updatedEdge.id ? updatedEdge : e)),
-        );
-      }
+      const updatedEdges = edgeList.map((e) =>
+        e.id === activeEdge.id ? { ...activeEdge, isEditing: false } : e,
+      );
+      setEdgeList(updatedEdges);
+      onEdgeUpdate(activeEdge);
     }
     setShowEdgeDialog(false);
     setActiveEdge(null);
     setEdgeCreationState({ source: null, target: null });
   };
 
-  // Confirm and execute deletion of node or edge
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (confirmDeleteType === "node" && nodeToDelete) {
-      const { error: nodeError } = await supabase
-        .from("nodes")
-        .delete()
-        .eq("id", nodeToDelete);
-      if (nodeError) {
-        console.error("Error deleting node:", nodeError);
-        return;
-      }
-
-      const { error: edgeError } = await supabase
-        .from("edges")
-        .delete()
-        .or(`source.eq.${nodeToDelete},target.eq.${nodeToDelete}`);
-      if (edgeError) {
-        console.error("Error deleting edges:", edgeError);
-        return;
-      }
-
-      setNodeList(nodeList.filter((n) => n.id !== nodeToDelete));
-      setEdgeList(
-        edgeList.filter(
-          (e) => e.source !== nodeToDelete && e.target !== nodeToDelete,
-        ),
+      const filteredNodes = nodeList.filter((n) => n.id !== nodeToDelete);
+      const filteredEdges = edgeList.filter(
+        (e) => e.source !== nodeToDelete && e.target !== nodeToDelete,
       );
+      setNodeList(filteredNodes);
+      setEdgeList(filteredEdges);
+      onNodeDelete(nodeToDelete);
     } else if (confirmDeleteType === "edge" && edgeToDelete) {
-      const { error } = await supabase
-        .from("edges")
-        .delete()
-        .eq("id", edgeToDelete);
-      if (error) {
-        console.error("Error deleting edge:", error);
-      } else {
-        setEdgeList(edgeList.filter((e) => e.id !== edgeToDelete));
-      }
+      const filteredEdges = edgeList.filter((e) => e.id !== edgeToDelete);
+      setEdgeList(filteredEdges);
+      onEdgeDelete(edgeToDelete);
     }
     setShowConfirmDelete(false);
     setNodeToDelete(null);
@@ -252,7 +262,6 @@ const KnowledgeGraph: React.FC = () => {
     setConfirmDeleteType(null);
   };
 
-  // Create a new node between two nodes on an edge
   const createNodeFromEdge = (relationship: string) => {
     if (!midEdgePoint) return;
 
@@ -261,10 +270,13 @@ const KnowledgeGraph: React.FC = () => {
 
     if (!sourceNode || !targetNode) return;
 
+    // Generate new node position between source and target
     const newNodeId = `node-${Date.now()}`;
+
+    // Create a new node
     const newNode: Node = {
       id: newNodeId,
-      type: "event",
+      type: "event", // Default type
       label: `Event between ${sourceNode.label} and ${targetNode.label}`,
       description: "",
       x: midEdgePoint.x,
@@ -273,6 +285,7 @@ const KnowledgeGraph: React.FC = () => {
       isEditing: true,
     };
 
+    // Create two new edges
     const edge1: Edge = {
       id: `edge-${Date.now()}`,
       source: midEdgePoint.edge.source,
@@ -287,26 +300,30 @@ const KnowledgeGraph: React.FC = () => {
       relationship: relationship || "Related to",
     };
 
+    // Delete the original edge
     const filteredEdges = edgeList.filter((e) => e.id !== midEdgePoint.edge.id);
 
+    // Update the state
     setNodeList([...nodeList, newNode]);
     setEdgeList([...filteredEdges, edge1, edge2]);
     setMidEdgePoint(null);
     setShowMidEdgeMenu(false);
 
+    // Set active node for editing
     setActiveNode(newNode);
     setShowNodeDialog(true);
   };
 
-  // Create a new node from scratch on double-click
   const createNewNodeFromScratch = (event: React.MouseEvent) => {
     if (!svgRef.current) return;
 
+    // Get mouse position relative to SVG
     const svg = svgRef.current;
     const rect = svg.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
+    // Create new node
     const newNode: Node = {
       id: `node-${Date.now()}`,
       type: "concept",
@@ -322,8 +339,8 @@ const KnowledgeGraph: React.FC = () => {
     setShowNodeDialog(true);
   };
 
-  // Create a new edge between two nodes
   const createNewEdge = (sourceId: string, targetId: string) => {
+    // Check if edge already exists
     const edgeExists = edgeList.some(
       (e) =>
         (e.source === sourceId && e.target === targetId) ||
@@ -348,83 +365,6 @@ const KnowledgeGraph: React.FC = () => {
     setShowEdgeDialog(true);
   };
 
-  // Highlight nodes and edges based on focus
-  const updateHighlighting = useCallback(() => {
-    if (!svgRef.current) return;
-
-    const svg = d3.select(svgRef.current);
-
-    if (focusedNodeId) {
-      const connectedEdges = edgeList.filter(
-        (e) => e.source === focusedNodeId || e.target === focusedNodeId,
-      );
-
-      const connectedNodeIds = new Set<string>();
-      connectedEdges.forEach((e) => {
-        connectedNodeIds.add(e.source);
-        connectedNodeIds.add(e.target);
-      });
-
-      svg.selectAll(".node").each(function (d: any) {
-        const node = d3.select(this);
-        if (d.id === focusedNodeId || connectedNodeIds.has(d.id)) {
-          node.classed("highlighted", true);
-          node.classed("dimmed", false);
-        } else {
-          node.classed("highlighted", false);
-          node.classed("dimmed", true);
-        }
-      });
-
-      svg.selectAll(".link").each(function (d: any) {
-        const edge = d3.select(this);
-        if (connectedEdges.some((e) => e.id === d.id)) {
-          edge.classed("highlighted", true);
-          edge.classed("dimmed", false);
-        } else {
-          edge.classed("highlighted", false);
-          edge.classed("dimmed", true);
-        }
-      });
-    } else {
-      svg
-        .selectAll(".node")
-        .classed("highlighted", false)
-        .classed("dimmed", false);
-      svg
-        .selectAll(".link")
-        .classed("highlighted", false)
-        .classed("dimmed", false);
-    }
-  }, [focusedNodeId, edgeList]);
-
-  useEffect(() => {
-    updateHighlighting();
-  }, [focusedNodeId, updateHighlighting]);
-
-  // Highlight nodes based on search term
-  const updateSearchHighlighting = useCallback(() => {
-    if (!svgRef.current) return;
-
-    const svg = d3.select(svgRef.current);
-
-    const lowerSearchTerm = searchTerm.toLowerCase();
-
-    svg.selectAll(".node").each(function (d: any) {
-      const node = d3.select(this);
-      if (lowerSearchTerm && d.label.toLowerCase().includes(lowerSearchTerm)) {
-        node.classed("search-highlighted", true);
-      } else {
-        node.classed("search-highlighted", false);
-      }
-    });
-  }, [searchTerm]);
-
-  useEffect(() => {
-    updateSearchHighlighting();
-  }, [searchTerm, updateSearchHighlighting]);
-
-  // Main visualization function using D3
   const createVisualization = () => {
     if (!svgRef.current) return;
 
@@ -433,6 +373,7 @@ const KnowledgeGraph: React.FC = () => {
 
     const g = svg.append("g");
 
+    // Create a simulation with many-body force and center force
     const simulation = d3
       .forceSimulation(nodeList)
       .force(
@@ -446,6 +387,7 @@ const KnowledgeGraph: React.FC = () => {
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force("collision", d3.forceCollide().radius(50));
 
+    // Add zoom behavior
     const zoom = d3
       .zoom()
       .scaleExtent([0.1, 4])
@@ -455,12 +397,10 @@ const KnowledgeGraph: React.FC = () => {
 
     svg.call(zoom as any);
 
+    // Add double-click handler for creating new nodes
     svg.on("dblclick", createNewNodeFromScratch);
 
-    svg.on("click", () => {
-      setFocusedNodeId(null);
-    });
-
+    // Add arrow markers for edge directionality
     svg
       .append("defs")
       .selectAll("marker")
@@ -468,7 +408,7 @@ const KnowledgeGraph: React.FC = () => {
       .join("marker")
       .attr("id", "arrow")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 28)
+      .attr("refX", 28) // Adjust based on node size
       .attr("refY", 0)
       .attr("markerWidth", 6)
       .attr("markerHeight", 6)
@@ -477,6 +417,7 @@ const KnowledgeGraph: React.FC = () => {
       .attr("fill", "#94a3b8")
       .attr("d", "M0,-5L10,0L0,5");
 
+    // Add drop shadow for nodes
     const defs = svg.append("defs");
     defs
       .append("filter")
@@ -486,6 +427,7 @@ const KnowledgeGraph: React.FC = () => {
       .attr("dy", "1")
       .attr("stdDeviation", "2");
 
+    // Create patterns for node thumbnails/avatars
     nodeList.forEach((node) => {
       if (node.image) {
         defs
@@ -502,6 +444,7 @@ const KnowledgeGraph: React.FC = () => {
       }
     });
 
+    // Draw curved edges with gradients
     const link = g
       .append("g")
       .selectAll(".link")
@@ -517,30 +460,9 @@ const KnowledgeGraph: React.FC = () => {
       .attr("cursor", "pointer")
       .on("mouseenter", (event, d) => {
         setHoveredEdge(d.id);
-        if (popoverRef.current) {
-          const path = event.target as SVGPathElement;
-          const length = path.getTotalLength();
-          const point = path.getPointAtLength(length / 2);
-          popoverRef.current.style.display = "block";
-          popoverRef.current.innerHTML = `
-            <div class="p-2 bg-white border rounded shadow">
-              <p>Relationship: ${d.relationship || "Unknown"}</p>
-              <p>From: ${nodeList.find((n) => n.id === d.source)?.label || "Unknown"}</p>
-              <p>To: ${nodeList.find((n) => n.id === d.target)?.label || "Unknown"}</p>
-            </div>
-          `;
-          const svgRect = svgRef.current?.getBoundingClientRect();
-          if (svgRect) {
-            popoverRef.current.style.left = `${svgRect.left + point.x}px`;
-            popoverRef.current.style.top = `${svgRect.top + point.y - 10}px`;
-          }
-        }
       })
       .on("mouseleave", (event, d) => {
         setHoveredEdge(null);
-        if (popoverRef.current) {
-          popoverRef.current.style.display = "none";
-        }
       })
       .on("click", (event, d) => {
         event.stopPropagation();
@@ -554,6 +476,7 @@ const KnowledgeGraph: React.FC = () => {
         setShowConfirmDelete(true);
       });
 
+    // Add relationship labels on edges
     g.append("g")
       .selectAll(".edge-label")
       .data(edgeList)
@@ -568,6 +491,7 @@ const KnowledgeGraph: React.FC = () => {
       .attr("startOffset", "50%")
       .text((d) => d.relationship || "");
 
+    // Add invisible wider path for edge interaction
     g.append("g")
       .selectAll(".edge-hitbox")
       .data(edgeList)
@@ -584,6 +508,7 @@ const KnowledgeGraph: React.FC = () => {
         setHoveredEdge(null);
       })
       .on("click", (event, d) => {
+        // Calculate middle point of the edge
         const source = nodeList.find((n) => n.id === d.source);
         const target = nodeList.find((n) => n.id === d.target);
 
@@ -603,6 +528,7 @@ const KnowledgeGraph: React.FC = () => {
         }
       });
 
+    // Draw nodes with different shapes based on type
     const nodeGroups = g
       .append("g")
       .selectAll(".node")
@@ -619,6 +545,7 @@ const KnowledgeGraph: React.FC = () => {
           .on("end", dragended) as any,
       );
 
+    // Add node shapes
     nodeGroups
       .append("path")
       .attr("d", (d) => getNodeShape(d.type))
@@ -645,29 +572,14 @@ const KnowledgeGraph: React.FC = () => {
       .attr("filter", "url(#shadow)")
       .on("mouseenter", (event, d) => {
         setHoveredNode(d.id);
-        if (popoverRef.current) {
-          popoverRef.current.style.display = "block";
-          popoverRef.current.innerHTML = `
-            <div class="p-2 bg-white border rounded shadow">
-              <h3>${d.label}</h3>
-              <p>Type: ${d.type}</p>
-              ${d.description ? `<p>${d.description}</p>` : ""}
-            </div>
-          `;
-          const bbox = (event.target as SVGElement).getBoundingClientRect();
-          popoverRef.current.style.left = `${bbox.left + bbox.width / 2}px`;
-          popoverRef.current.style.top = `${bbox.top - 10}px`;
-        }
       })
       .on("mouseleave", (event, d) => {
         setHoveredNode(null);
-        if (popoverRef.current) {
-          popoverRef.current.style.display = "none";
-        }
       })
       .on("click", (event, d) => {
         event.stopPropagation();
 
+        // Handle edge creation mode
         if (edgeCreationState.source) {
           if (d.id !== edgeCreationState.source) {
             createNewEdge(edgeCreationState.source, d.id);
@@ -675,10 +587,12 @@ const KnowledgeGraph: React.FC = () => {
           return;
         }
 
+        onNodeSelect(d.id);
         setActiveNode(d);
         setShowNodeDialog(true);
       });
 
+    // Add type icon inside nodes
     nodeGroups
       .append("svg:foreignObject")
       .attr("width", 24)
@@ -716,21 +630,39 @@ const KnowledgeGraph: React.FC = () => {
         </div>`;
       });
 
+    // Add node labels
     nodeGroups
       .append("text")
       .text((d) => d.label)
       .attr("text-anchor", "middle")
-      .attr("y", 35)
+      .attr("y", (d) => {
+        switch (d.type) {
+          case "person":
+            return 35; // Square
+          case "event":
+            return 35; // Diamond
+          case "place":
+            return 35; // Triangle
+          case "document":
+            return 35; // Document
+          case "concept":
+            return 35; // Circle
+          default:
+            return 35;
+        }
+      })
       .attr("font-size", "12px")
       .attr("pointer-events", "none")
       .attr("font-weight", (d) => (hoveredNode === d.id ? "bold" : "normal"));
 
+    // Add quick action buttons when node is hovered
     const actionButtons = nodeGroups
       .append("g")
       .attr("class", "node-actions")
       .attr("opacity", (d) => (hoveredNode === d.id ? 1 : 0))
       .attr("transform", "translate(0, -35)");
 
+    // Edit button
     actionButtons
       .append("circle")
       .attr("cx", -20)
@@ -754,6 +686,7 @@ const KnowledgeGraph: React.FC = () => {
       .attr("pointer-events", "none")
       .text("✏️");
 
+    // Delete button
     actionButtons
       .append("circle")
       .attr("cx", 20)
@@ -778,6 +711,7 @@ const KnowledgeGraph: React.FC = () => {
       .attr("pointer-events", "none")
       .text("🗑️");
 
+    // Connect button
     actionButtons
       .append("circle")
       .attr("cx", 0)
@@ -800,28 +734,7 @@ const KnowledgeGraph: React.FC = () => {
       .attr("pointer-events", "none")
       .text("🔗");
 
-    actionButtons
-      .append("circle")
-      .attr("cx", 40)
-      .attr("cy", 0)
-      .attr("r", 10)
-      .attr("fill", "#f59e0b")
-      .attr("cursor", "pointer")
-      .on("click", (event, d) => {
-        event.stopPropagation();
-        setFocusedNodeId(d.id);
-      });
-
-    actionButtons
-      .append("text")
-      .attr("x", 40)
-      .attr("y", 4)
-      .attr("text-anchor", "middle")
-      .attr("font-size", "12px")
-      .attr("fill", "white")
-      .attr("pointer-events", "none")
-      .text("🔍");
-
+    // Show indicator when in edge creation mode
     if (edgeCreationState.source) {
       const sourceNode = nodeList.find(
         (n) => n.id === edgeCreationState.source,
@@ -850,14 +763,17 @@ const KnowledgeGraph: React.FC = () => {
       }
     }
 
+    // Force simulation tick function
     simulation.on("tick", () => {
+      // Update edge paths
       link.attr("d", (d: any) => {
         const dx = d.target.x - d.source.x;
         const dy = d.target.y - d.source.y;
-        const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
+        const dr = Math.sqrt(dx * dx + dy * dy) * 1.5; // Curve factor
         return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
       });
 
+      // Update edge hitboxes
       g.selectAll(".edge-hitbox").attr("d", (d: any) => {
         const dx = d.target.x - d.source.x;
         const dy = d.target.y - d.source.y;
@@ -865,15 +781,18 @@ const KnowledgeGraph: React.FC = () => {
         return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
       });
 
+      // Update node positions
       nodeGroups.attr("transform", (d: any) => `translate(${d.x},${d.y})`);
     });
 
+    // Show node controls
     if (showMidEdgeMenu && midEdgePoint) {
       const menu = g
         .append("g")
         .attr("class", "mid-edge-menu")
         .attr("transform", `translate(${midEdgePoint.x}, ${midEdgePoint.y})`);
 
+      // Background circle
       menu
         .append("circle")
         .attr("r", 40)
@@ -881,6 +800,7 @@ const KnowledgeGraph: React.FC = () => {
         .attr("stroke", "#94a3b8")
         .attr("stroke-width", 1);
 
+      // Add entity button
       const addButton = menu
         .append("g")
         .attr("cursor", "pointer")
@@ -913,6 +833,7 @@ const KnowledgeGraph: React.FC = () => {
         .attr("fill", "#3b82f6")
         .text("Add Node");
 
+      // Close button
       const closeButton = menu
         .append("g")
         .attr("cursor", "pointer")
@@ -947,41 +868,7 @@ const KnowledgeGraph: React.FC = () => {
         .text("Cancel");
     }
 
-    const nodeTypes = [
-      { type: "person", color: "#3b82f6", label: "Person" },
-      { type: "event", color: "#ef4444", label: "Event" },
-      { type: "place", color: "#22c55e", label: "Place" },
-      { type: "document", color: "#8b5cf6", label: "Document" },
-      { type: "concept", color: "#f59e0b", label: "Concept" },
-    ];
-
-    const legend = g
-      .append("g")
-      .attr("class", "legend")
-      .attr("transform", `translate(${width - 100}, 20)`);
-
-    const legendScale = 0.5;
-    nodeTypes.forEach((type, index) => {
-      const legendItem = legend
-        .append("g")
-        .attr("transform", `translate(0, ${index * 25})`);
-
-      legendItem
-        .append("path")
-        .attr("d", getNodeShape(type.type))
-        .attr("transform", `scale(${legendScale})`)
-        .attr("fill", "none")
-        .attr("stroke", type.color)
-        .attr("stroke-width", 2);
-
-      legendItem
-        .append("text")
-        .attr("x", 20)
-        .attr("y", 5)
-        .text(type.label)
-        .attr("font-size", "12px");
-    });
-
+    // Functions for node dragging
     function dragstarted(event: any, d: any) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
       d.fx = d.x;
@@ -1043,24 +930,8 @@ const KnowledgeGraph: React.FC = () => {
     setEdgeCreationState({ source: null, target: null });
   };
 
-  const handleAISave = (newNodes: Node[], newEdges: Edge[]) => {
-    setNodeList([...nodeList, ...newNodes]);
-    setEdgeList([...edgeList, ...newEdges]);
-    setShowAIGenerator(false);
-  };
-
   return (
     <div className="flex flex-col w-full h-full">
-      <div className="p-2 bg-gray-100 border-b">
-        <Input
-          type="text"
-          placeholder="Search nodes..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full"
-        />
-      </div>
-
       <div className="flex justify-between p-2 bg-gray-100 border-b">
         <div className="flex gap-2">
           <TooltipProvider>
@@ -1119,21 +990,6 @@ const KnowledgeGraph: React.FC = () => {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => setShowAIGenerator(true)}
-                  className="h-8 w-8"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Generate AI Content</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
                   onClick={createNewNodeFromScratch}
                   className="h-8 w-8"
                 >
@@ -1164,13 +1020,9 @@ const KnowledgeGraph: React.FC = () => {
 
       <div className="relative flex-grow overflow-hidden">
         <svg ref={svgRef} width="100%" height="100%" className="bg-white" />
-        <div
-          ref={popoverRef}
-          className="absolute pointer-events-none"
-          style={{ display: "none" }}
-        />
       </div>
 
+      {/* Node Dialog */}
       <Dialog open={showNodeDialog} onOpenChange={setShowNodeDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1290,6 +1142,7 @@ const KnowledgeGraph: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Edge Dialog */}
       <Dialog open={showEdgeDialog} onOpenChange={setShowEdgeDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1343,6 +1196,7 @@ const KnowledgeGraph: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Confirm Delete Dialog */}
       <Dialog open={showConfirmDelete} onOpenChange={setShowConfirmDelete}>
         <DialogContent>
           <DialogHeader>
@@ -1372,15 +1226,6 @@ const KnowledgeGraph: React.FC = () => {
               Delete
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showAIGenerator} onOpenChange={setShowAIGenerator}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate AI Content</DialogTitle>
-          </DialogHeader>
-          <AIGeneratedContent onSave={handleAISave} />
         </DialogContent>
       </Dialog>
     </div>
