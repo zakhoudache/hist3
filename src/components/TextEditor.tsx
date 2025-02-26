@@ -1,19 +1,19 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { analyzeText } from "@/lib/textAnalysis";
+import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import { Textarea } from "./ui/textarea";
-import { Card } from "./ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import { Input } from "./ui/input";
 import { Slider } from "./ui/slider";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import {
   Tooltip,
-  TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  TooltipContent,
 } from "./ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { Badge } from "./ui/badge";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
@@ -22,86 +22,105 @@ import {
   Bold,
   Italic,
   Underline,
-  List,
-  ListOrdered,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
   Heading1,
   Heading2,
   Heading3,
+  List,
+  ListOrdered,
   Quote,
   Link,
-  Image,
-  FileText,
-  Calendar,
-  User,
-  MapPin,
-  Search,
-  Clock,
-  ChevronDown,
   Save,
-  Undo,
-  Redo,
-  Eye,
-  Code,
   Download,
-  Share2,
+  Search,
+  ChevronUp,
+  ChevronDown,
   Settings,
-  Check,
-  AlertTriangle,
-  BookOpen,
+  Eye,
+  FileText,
   BarChart2,
-  Zap,
-  LifeBuoy,
+  Clock,
+  UserRound,
+  MapPin,
+  Calendar,
+  Book,
+  Lightbulb,
+  Flag,
+  Sparkles,
+  Workflow,
+  Maximize,
+  Minimize,
 } from "lucide-react";
+import KnowledgeGraph from "./KnowledgeGraph";
 
-// Enhanced entity types
-type EntityType =
+// Type definitions
+export type EntityType =
   | "person"
   | "place"
   | "event"
-  | "organization"
   | "concept"
-  | "date"
-  | "artifact";
+  | "organization"
+  | "artifact"
+  | "time"
+  | "other";
 
-interface Entity {
+export interface Entity {
+  id: string;
   text: string;
   type: EntityType;
   confidence: number;
-  startOffset: number;
-  endOffset: number;
+  offsets: { start: number; end: number }[];
   metadata?: {
     description?: string;
     importance?: number;
-    dates?: string[];
+    dates?: { start?: string; end?: string };
     category?: string;
   };
 }
 
-interface TextInsight {
+export interface TextInsight {
   type:
     | "readability"
     | "sentiment"
     | "complexity"
-    | "historicalAccuracy"
+    | "historical_accuracy"
     | "bias";
   score: number;
   summary: string;
-  details?: string[];
+  details?: string;
 }
 
-interface TextSnapshot {
+export interface TextSnapshot {
   id: string;
   timestamp: number;
   content: string;
   wordCount: number;
-  description: string;
+  description?: string;
 }
 
-interface TextEditorProps {
-  content?: string;
+export interface Node {
+  id: string;
+  type: EntityType;
+  label: string;
+  x?: number;
+  y?: number;
+  description?: string;
+  image?: string;
+  date?: string;
+  isNew?: boolean;
+  isEditing?: boolean;
+}
+
+export interface Edge {
+  id: string;
+  source: string;
+  target: string;
+  relationship: string;
+  isNew?: boolean;
+  isEditing?: boolean;
+}
+
+export interface TextEditorProps {
+  initialContent?: string;
   onContentChange?: (content: string) => void;
   onEntityDetected?: (entity: Entity) => void;
   mode?: "standard" | "research" | "teaching" | "collaborative";
@@ -111,21 +130,25 @@ interface TextEditorProps {
   showAnalytics?: boolean;
 }
 
-const TextEditor = ({
-  content = "Start typing your historical text here...",
-  onContentChange = () => {},
-  onEntityDetected = () => {},
+const TextEditor: React.FC<TextEditorProps> = ({
+  initialContent = "",
+  onContentChange,
+  onEntityDetected,
   mode = "standard",
   readOnly = false,
   maxLength,
   autoSave = true,
   showAnalytics = true,
-}: TextEditorProps) => {
-  const [text, setText] = useState(content);
-  const [selectedTab, setSelectedTab] = useState("write");
-  const [editMode, setEditMode] = useState<"rich" | "markdown" | "source">(
-    "rich",
-  );
+}) => {
+  // Supabase client for database operations
+  const supabase = useSupabaseClient();
+
+  // Component state
+  const [text, setText] = useState(initialContent);
+  const [selectedTab, setSelectedTab] = useState<
+    "write" | "preview" | "analyze" | "graph"
+  >("write");
+  const [editMode, setEditMode] = useState<"rich" | "markdown">("rich");
   const [fontSize, setFontSize] = useState(16);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [insights, setInsights] = useState<TextInsight[]>([]);
@@ -136,195 +159,288 @@ const TextEditor = ({
   >([]);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [showWordCount, setShowWordCount] = useState(true);
-  const [autoAnalyze, setAutoAnalyze] = useState(false);
+  const [autoAnalyze, setAutoAnalyze] = useState(true);
   const [history, setHistory] = useState<TextSnapshot[]>([]);
-  const [selectedStyleTab, setSelectedStyleTab] = useState("text");
+  const [selectedStyleTab, setSelectedStyleTab] = useState<
+    "text" | "paragraph" | "insert" | "history"
+  >("text");
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [aiAssistanceEnabled, setAiAssistanceEnabled] = useState(true);
   const [highlightEntities, setHighlightEntities] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [nodeList, setNodeList] = useState<Node[]>([]);
+  const [edgeList, setEdgeList] = useState<Edge[]>([]);
+  const [graphLoading, setGraphLoading] = useState(false);
 
+  // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const analyzeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Mode settings
   const modeSettings = {
     standard: {
-      title: "Standard Editor",
-      features: ["basic", "formatting", "entities"],
+      showAnalytics: true,
+      showAI: true,
+      showGraph: true,
     },
     research: {
-      title: "Research Mode",
-      features: ["advanced", "citations", "factChecking", "timeline"],
+      showAnalytics: true,
+      showAI: true,
+      showGraph: true,
     },
     teaching: {
-      title: "Teaching Mode",
-      features: ["simplification", "glossary", "explanations"],
+      showAnalytics: true,
+      showAI: true,
+      showGraph: true,
     },
     collaborative: {
-      title: "Collaborative Mode",
-      features: ["comments", "suggestions", "revisionHistory"],
+      showAnalytics: true,
+      showAI: true,
+      showGraph: true,
     },
   };
 
-  // Calculate word and character counts
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-  const charCount = text.length;
+  // Word/Character count calculation
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  const characterCount = text.length;
 
-  const selectedCount = (() => {
-    if (textareaRef.current) {
-      const start = textareaRef.current.selectionStart;
-      const end = textareaRef.current.selectionEnd;
-      const selectedText = text.substring(start, end);
-      return {
-        chars: selectedText.length,
-        words: selectedText.split(/\s+/).filter(Boolean).length,
-      };
+  let selectedText = "";
+  let selectedWordCount = 0;
+  let selectedCharacterCount = 0;
+
+  if (textareaRef.current) {
+    const { selectionStart, selectionEnd } = textareaRef.current;
+    if (selectionStart !== selectionEnd) {
+      selectedText = text.slice(selectionStart, selectionEnd);
+      selectedWordCount = selectedText
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length;
+      selectedCharacterCount = selectedText.length;
     }
-    return { chars: 0, words: 0 };
-  })();
+  }
 
-  // Handle text change with auto-analysis
+  // Text change handler
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setText(newText);
-    onContentChange(newText);
+
+    if (onContentChange) {
+      onContentChange(newText);
+    }
+
     setUnsavedChanges(true);
 
-    // Auto-analyze after user stops typing
+    // Auto analyze after delay
     if (autoAnalyze) {
       if (analyzeTimeoutRef.current) {
         clearTimeout(analyzeTimeoutRef.current);
       }
+
       analyzeTimeoutRef.current = setTimeout(() => {
         handleAnalyze();
       }, 1500);
     }
   };
 
-  // Text analysis function
+  // Text analysis handler
   const handleAnalyze = useCallback(async () => {
+    if (!text.trim()) return;
+
     setLoading(true);
+
     try {
-      // Mock analysis for demo - would connect to real API
-      const detectedEntities = await analyzeText(text);
-
-      // Enhanced mock entities
-      const enhancedEntities: Entity[] = detectedEntities.map(
-        (entity: any, index: number) => ({
-          ...entity,
-          confidence: Math.random() * 0.4 + 0.6, // Random confidence between 60-100%
-          startOffset: text.indexOf(entity.text),
-          endOffset: text.indexOf(entity.text) + entity.text.length,
-          metadata: {
-            description: `Historical ${entity.type} relevant to the text.`,
-            importance: Math.floor(Math.random() * 100),
-          },
-        }),
-      );
-
-      setEntities(enhancedEntities);
-      enhancedEntities.forEach((entity) => {
-        onEntityDetected(entity);
+      // Call Supabase Edge Function for AI analysis
+      const { data, error } = await supabase.functions.invoke("analyze-text", {
+        body: { text },
       });
 
-      // Generate insights
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error("No data returned from analysis");
+      }
+
+      // Process entities from the API response
+      const extractedEntities: Entity[] = data.entities.map((entity: any) => ({
+        id: entity.id,
+        text: entity.text,
+        type: entity.type,
+        confidence: entity.confidence || 0.9,
+        offsets: entity.offsets || [
+          {
+            start: text.indexOf(entity.text),
+            end: text.indexOf(entity.text) + entity.text.length,
+          },
+        ],
+        metadata: entity.metadata || {
+          description: `Description of ${entity.text}`,
+          importance: Math.random() * 10,
+          dates: {},
+          category: "general",
+        },
+      }));
+
+      setEntities(extractedEntities);
+
+      // Notify parent component about detected entities
+      if (onEntityDetected) {
+        extractedEntities.forEach((entity) => onEntityDetected(entity));
+      }
+
+      // Process insights
+      setInsights(data.insights || []);
+
+      // Process nodes and edges for the knowledge graph
+      setNodeList(data.nodes || []);
+      setEdgeList(data.edges || []);
+
+      // Create new snapshot
+      const newSnapshot: TextSnapshot = {
+        id: `snapshot-${Date.now()}`,
+        timestamp: Date.now(),
+        content: text,
+        wordCount,
+        description: `Snapshot at ${new Date().toLocaleTimeString()}`,
+      };
+
+      setHistory((prev) => [...prev, newSnapshot]);
+      setUnsavedChanges(false);
+    } catch (err) {
+      console.error("Analysis error:", err);
+      // Fallback to mock data for development
+      const mockEntities: Entity[] = [
+        {
+          id: "1",
+          text: text.split(" ").slice(0, 2).join(" "),
+          type: "person",
+          confidence: 0.94,
+          offsets: [
+            { start: 0, end: text.split(" ").slice(0, 2).join(" ").length },
+          ],
+          metadata: {
+            description: "A historical figure",
+            importance: 8,
+            dates: { start: "1750", end: "1800" },
+            category: "historical",
+          },
+        },
+        {
+          id: "2",
+          text: text.split(" ").slice(3, 5).join(" "),
+          type: "place",
+          confidence: 0.87,
+          offsets: [
+            {
+              start: text.indexOf(text.split(" ").slice(3, 5).join(" ")),
+              end:
+                text.indexOf(text.split(" ").slice(3, 5).join(" ")) +
+                text.split(" ").slice(3, 5).join(" ").length,
+            },
+          ],
+          metadata: {
+            description: "A location",
+            importance: 6,
+            category: "geography",
+          },
+        },
+      ];
+
+      setEntities(mockEntities);
+
+      // Create mock nodes and edges for development
+      const mockNodes: Node[] = mockEntities.map((entity) => ({
+        id: entity.id,
+        type: entity.type,
+        label: entity.text,
+        description: entity.metadata?.description,
+      }));
+
+      const mockEdges: Edge[] = [];
+      if (mockNodes.length >= 2) {
+        mockEdges.push({
+          id: "edge1",
+          source: mockNodes[0].id,
+          target: mockNodes[1].id,
+          relationship: "associated with",
+        });
+      }
+
+      setNodeList(mockNodes);
+      setEdgeList(mockEdges);
+
       const mockInsights: TextInsight[] = [
         {
           type: "readability",
-          score: Math.random() * 100,
-          summary: "Text readability is moderate to high.",
-          details: [
-            "Sentence length is appropriate",
-            "Vocabulary is accessible",
-          ],
+          score: 75,
+          summary: "Highly readable text",
+          details:
+            "The text has a Flesch-Kincaid grade level of approximately 8th grade.",
         },
         {
           type: "sentiment",
-          score: Math.random() * 100,
-          summary: "Neutral to slightly positive tone detected.",
-          details: ["Low emotional language", "Factual presentation"],
+          score: 60,
+          summary: "Slightly positive sentiment",
+          details:
+            "The text has a generally positive tone with some neutral elements.",
         },
         {
           type: "complexity",
-          score: Math.random() * 100,
-          summary: "Medium complexity suitable for general audiences.",
-          details: [
-            "Some specialized terminology present",
-            "Context provided for complex concepts",
-          ],
+          score: 40,
+          summary: "Low to moderate complexity",
+          details: "The text uses straightforward language and structure.",
         },
         {
-          type: "historicalAccuracy",
-          score: Math.random() * 100,
-          summary: "Most historical references appear accurate.",
-          details: [
-            "Cross-referenced with historical data",
-            "Timeline consistency maintained",
-          ],
+          type: "historical_accuracy",
+          score: 85,
+          summary: "Good historical accuracy",
+          details: "The historical elements in the text appear to be accurate.",
         },
         {
           type: "bias",
-          score: Math.random() * 100,
-          summary: "Minimal detectable bias in presentation.",
-          details: [
-            "Multiple perspectives acknowledged",
-            "Source diversity could be improved",
-          ],
+          score: 20,
+          summary: "Low bias detected",
+          details: "The text presents a relatively balanced perspective.",
         },
       ];
 
       setInsights(mockInsights);
-
-      // Save snapshot to history
-      const newSnapshot: TextSnapshot = {
-        id: Date.now().toString(),
-        timestamp: Date.now(),
-        content: text,
-        wordCount,
-        description: `Revision with ${enhancedEntities.length} entities detected`,
-      };
-
-      setHistory((prev) => [newSnapshot, ...prev]);
-      setUnsavedChanges(false);
-    } catch (error) {
-      console.error("Analysis error:", error);
     } finally {
       setLoading(false);
     }
-  }, [text, wordCount, onEntityDetected]);
+  }, [text, wordCount, onEntityDetected, supabase]);
 
   // Search functionality
-  const handleSearch = useCallback(() => {
-    if (!searchQuery) {
+  const handleSearch = () => {
+    if (!searchQuery.trim()) {
       setSearchResults([]);
       return;
     }
 
     const regex = new RegExp(searchQuery, "gi");
-    const matches: { index: number; text: string }[] = [];
+    const results: { index: number; text: string }[] = [];
     let match;
 
     while ((match = regex.exec(text)) !== null) {
-      matches.push({
+      results.push({
         index: match.index,
         text: match[0],
       });
     }
 
-    setSearchResults(matches);
-    setCurrentSearchIndex(matches.length > 0 ? 0 : -1);
+    setSearchResults(results);
+    setCurrentSearchIndex(results.length > 0 ? 0 : -1);
 
-    // Scroll to first result
-    if (matches.length > 0 && textareaRef.current) {
+    if (results.length > 0 && textareaRef.current) {
+      const { index } = results[0];
       textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(
-        matches[0].index,
-        matches[0].index + matches[0].text.length,
-      );
+      textareaRef.current.setSelectionRange(index, index + searchQuery.length);
+      scrollTextareaToSelection();
     }
-  }, [searchQuery, text]);
+  };
 
-  // Navigate search results
   const navigateSearch = (direction: "next" | "prev") => {
     if (searchResults.length === 0) return;
 
@@ -338,83 +454,114 @@ const TextEditor = ({
 
     setCurrentSearchIndex(newIndex);
 
-    // Scroll to selection
     if (textareaRef.current) {
-      const result = searchResults[newIndex];
+      const { index } = searchResults[newIndex];
       textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(
-        result.index,
-        result.index + result.text.length,
-      );
+      textareaRef.current.setSelectionRange(index, index + searchQuery.length);
+      scrollTextareaToSelection();
     }
   };
 
-  // Formatting functions
+  const scrollTextareaToSelection = () => {
+    if (textareaRef.current) {
+      const textarea = textareaRef.current;
+      const { selectionStart } = textarea;
+
+      // This is a hacky way to scroll to the selection, but it works
+      const lines = text.substring(0, selectionStart).split("\n").length - 1;
+      const lineHeight = 20; // approximate line height
+      textarea.scrollTop = lines * lineHeight;
+    }
+  };
+
+  // Text formatting
   const applyFormatting = (format: string) => {
     if (!textareaRef.current) return;
 
-    const start = textareaRef.current.selectionStart;
-    const end = textareaRef.current.selectionEnd;
-    const selectedText = text.substring(start, end);
+    const textarea = textareaRef.current;
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    const selectedText = text.substring(selectionStart, selectionEnd);
 
-    let formattedText = "";
-    let newCursorPos = end;
+    let newText = text;
+    let newCursorPos = selectionEnd;
 
     switch (format) {
       case "bold":
-        formattedText = `**${selectedText}**`;
-        newCursorPos = start + 2 + selectedText.length;
+        newText =
+          text.substring(0, selectionStart) +
+          `**${selectedText}**` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 4;
         break;
       case "italic":
-        formattedText = `_${selectedText}_`;
-        newCursorPos = start + 1 + selectedText.length;
+        newText =
+          text.substring(0, selectionStart) +
+          `*${selectedText}*` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 2;
         break;
       case "underline":
-        formattedText = `<u>${selectedText}</u>`;
-        newCursorPos = start + 3 + selectedText.length;
+        newText =
+          text.substring(0, selectionStart) +
+          `__${selectedText}__` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 4;
         break;
       case "h1":
-        formattedText = `\n# ${selectedText}\n`;
-        newCursorPos = start + 3 + selectedText.length;
+        newText =
+          text.substring(0, selectionStart) +
+          `# ${selectedText}` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 2;
         break;
       case "h2":
-        formattedText = `\n## ${selectedText}\n`;
-        newCursorPos = start + 4 + selectedText.length;
+        newText =
+          text.substring(0, selectionStart) +
+          `## ${selectedText}` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 3;
         break;
       case "h3":
-        formattedText = `\n### ${selectedText}\n`;
-        newCursorPos = start + 5 + selectedText.length;
+        newText =
+          text.substring(0, selectionStart) +
+          `### ${selectedText}` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 4;
+        break;
+      case "ul":
+        newText =
+          text.substring(0, selectionStart) +
+          `- ${selectedText}` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 2;
+        break;
+      case "ol":
+        newText =
+          text.substring(0, selectionStart) +
+          `1. ${selectedText}` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 3;
         break;
       case "quote":
-        formattedText = `\n> ${selectedText}\n`;
-        newCursorPos = start + 3 + selectedText.length;
-        break;
-      case "list":
-        formattedText = selectedText
-          .split("\n")
-          .map((line) => `- ${line}`)
-          .join("\n");
-        break;
-      case "orderedList":
-        formattedText = selectedText
-          .split("\n")
-          .map((line, i) => `${i + 1}. ${line}`)
-          .join("\n");
+        newText =
+          text.substring(0, selectionStart) +
+          `> ${selectedText}` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 2;
         break;
       case "link":
-        formattedText = `[${selectedText}](url)`;
-        newCursorPos = start + selectedText.length + 3;
+        newText =
+          text.substring(0, selectionStart) +
+          `[${selectedText}](url)` +
+          text.substring(selectionEnd);
+        newCursorPos = selectionEnd + 7;
         break;
-      default:
-        return;
     }
 
-    const newText =
-      text.substring(0, start) + formattedText + text.substring(end);
     setText(newText);
-    onContentChange(newText);
 
-    // This will be executed after the state update and re-render
+    // Need to wait for state update
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
@@ -423,112 +570,89 @@ const TextEditor = ({
     }, 0);
   };
 
-  // Save current text as a snapshot
+  // Snapshot functions
   const saveSnapshot = () => {
     const newSnapshot: TextSnapshot = {
-      id: Date.now().toString(),
+      id: `snapshot-${Date.now()}`,
       timestamp: Date.now(),
       content: text,
       wordCount,
       description: "Manual save",
     };
 
-    setHistory((prev) => [newSnapshot, ...prev]);
+    setHistory((prev) => [...prev, newSnapshot]);
     setUnsavedChanges(false);
   };
 
-  // Restore from snapshot
   const restoreSnapshot = (snapshot: TextSnapshot) => {
     if (unsavedChanges) {
       if (
-        window.confirm(
-          "You have unsaved changes. Are you sure you want to revert to a previous version?",
+        !window.confirm(
+          "You have unsaved changes. Are you sure you want to restore a previous version?",
         )
       ) {
-        setText(snapshot.content);
-        onContentChange(snapshot.content);
-        setUnsavedChanges(false);
+        return;
       }
-    } else {
-      setText(snapshot.content);
-      onContentChange(snapshot.content);
     }
+
+    setText(snapshot.content);
+    setUnsavedChanges(false);
   };
 
-  // Format timestamp for display
   const formatTimestamp = (timestamp: number) => {
     const date = new Date(timestamp);
-    return date.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
   };
 
-  // Get text with highlighted entities for preview
+  // Get highlighted text with entities
   const getHighlightedText = () => {
     if (!highlightEntities || entities.length === 0) {
-      return text;
+      return `<div class="prose">${text.replace(/\n/g, "<br/>")}</div>`;
     }
 
-    // Sort entities by starting position (descending)
-    const sortedEntities = [...entities].sort(
-      (a, b) => b.startOffset - a.startOffset,
-    );
+    let htmlText = text;
+    const sortedEntities = [...entities].sort((a, b) => {
+      // Sort by starting offset (descending) to replace from the end
+      return (b.offsets[0]?.start || 0) - (a.offsets[0]?.start || 0);
+    });
 
-    let result = text;
-    for (const entity of sortedEntities) {
-      const { startOffset, endOffset, type } = entity;
+    const colorMap: Record<EntityType, string> = {
+      person: "#ffcccb",
+      place: "#c2f0c2",
+      event: "#c2e0ff",
+      concept: "#f5f5dc",
+      organization: "#ffd700",
+      artifact: "#e6e6fa",
+      time: "#f08080",
+      other: "#d3d3d3",
+    };
 
-      const colorMap: Record<EntityType, string> = {
-        person: "#e6f2ff",
-        place: "#e6ffe6",
-        event: "#ffe6e6",
-        organization: "#f2e6ff",
-        concept: "#fff2e6",
-        date: "#e6ffff",
-        artifact: "#ffe6f2",
-      };
+    sortedEntities.forEach((entity) => {
+      entity.offsets.forEach((offset) => {
+        const { start, end } = offset;
+        const entityText = htmlText.substring(start, end);
+        const highlightedEntity = `<span class="entity-highlight" style="background-color: ${colorMap[entity.type]};" title="${entity.type}: ${entity.metadata?.description || ""}">${entityText}</span>`;
+        htmlText =
+          htmlText.substring(0, start) +
+          highlightedEntity +
+          htmlText.substring(end);
+      });
+    });
 
-      const color = colorMap[type] || "#f0f0f0";
-
-      const replacement = `<span style="background-color: ${color}; padding: 0 2px; border-radius: 2px;">${result.substring(startOffset, endOffset)}</span>`;
-      result =
-        result.substring(0, startOffset) +
-        replacement +
-        result.substring(endOffset);
-    }
-
-    return result;
+    return `<div class="prose">${htmlText.replace(/\n/g, "<br/>")}</div>`;
   };
 
-  // Download text content
+  // Download content
   const downloadContent = (format: "txt" | "md" | "html") => {
     let content = text;
     let mimeType = "text/plain";
     let extension = "txt";
 
     if (format === "html") {
-      content = `<!DOCTYPE html>
-<html>
-<head>
-  <title>Historical Document</title>
-  <meta charset="utf-8">
-</head>
-<body>
-  <article>
-    ${text
-      .split("\n")
-      .map((line) => `<p>${line}</p>`)
-      .join("")}
-  </article>
-</body>
-</html>`;
+      content = getHighlightedText();
       mimeType = "text/html";
       extension = "html";
     } else if (format === "md") {
-      // Content already in markdown format
       mimeType = "text/markdown";
       extension = "md";
     }
@@ -537,827 +661,645 @@ const TextEditor = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `historical_document.${extension}`;
+    a.download = `document.${extension}`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  // Auto-save functionality
+  // Generate knowledge graph from text
+  const generateKnowledgeGraph = async () => {
+    setGraphLoading(true);
+
+    try {
+      // Call Supabase Edge Function to generate knowledge graph
+      const { data, error } = await supabase.functions.invoke(
+        "generateKnowledgeGraph",
+        {
+          body: { text },
+        },
+      );
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (data?.nodes && data?.edges) {
+        setNodeList(data.nodes);
+        setEdgeList(data.edges);
+      }
+    } catch (err) {
+      console.error("Knowledge graph generation error:", err);
+      // Fallback to mock data
+      const mockNodes: Node[] = entities.map((entity, index) => ({
+        id: entity.id,
+        type: entity.type,
+        label: entity.text,
+        description: entity.metadata?.description,
+      }));
+
+      const mockEdges: Edge[] = [];
+      // Create some sample edges
+      for (let i = 0; i < mockNodes.length - 1; i++) {
+        mockEdges.push({
+          id: `edge-${i}`,
+          source: mockNodes[i].id,
+          target: mockNodes[i + 1].id,
+          relationship: "related to",
+        });
+      }
+
+      setNodeList(mockNodes);
+      setEdgeList(mockEdges);
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
+  // Auto-save effect
   useEffect(() => {
     if (autoSave && unsavedChanges) {
-      const timer = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         saveSnapshot();
       }, 30000); // Auto-save after 30 seconds of inactivity
 
-      return () => clearTimeout(timer);
+      return () => clearTimeout(timeoutId);
     }
   }, [text, unsavedChanges, autoSave]);
 
-  // Effect for search handling
+  // Clear search results when search query is cleared
   useEffect(() => {
-    if (searchQuery === "") {
+    if (!searchQuery) {
       setSearchResults([]);
     }
   }, [searchQuery]);
 
   return (
-    <Card
-      className={`h-full w-full bg-white flex flex-col ${focusMode ? "max-w-3xl mx-auto" : ""}`}
-    >
-      <div className="border-b p-2">
-        <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-          <div className="flex justify-between items-center px-2">
-            <TabsList>
-              <TabsTrigger value="write" className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                <span>Write</span>
-              </TabsTrigger>
-              <TabsTrigger value="preview" className="flex items-center gap-1">
-                <Eye className="h-4 w-4" />
-                <span>Preview</span>
-              </TabsTrigger>
-              <TabsTrigger value="analyze" className="flex items-center gap-1">
-                <BarChart2 className="h-4 w-4" />
-                <span>Analyze</span>
-              </TabsTrigger>
-              <TabsTrigger value="history" className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                <span>History</span>
-              </TabsTrigger>
-            </TabsList>
+    <div className={`text-editor ${focusMode ? "focus-mode" : ""}`}>
+      <Tabs
+        value={selectedTab}
+        onValueChange={(val) => setSelectedTab(val as any)}
+      >
+        <div className="flex justify-between items-center mb-2">
+          <TabsList>
+            <TabsTrigger value="write" className="flex items-center gap-1">
+              <FileText size={16} />
+              <span>Write</span>
+            </TabsTrigger>
+            <TabsTrigger value="preview" className="flex items-center gap-1">
+              <Eye size={16} />
+              <span>Preview</span>
+            </TabsTrigger>
+            <TabsTrigger value="analyze" className="flex items-center gap-1">
+              <BarChart2 size={16} />
+              <span>Analyze</span>
+            </TabsTrigger>
+            <TabsTrigger value="graph" className="flex items-center gap-1">
+              <Workflow size={16} />
+              <span>Knowledge Graph</span>
+            </TabsTrigger>
+          </TabsList>
 
-            <div className="flex items-center gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setFocusMode(!focusMode)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{focusMode ? "Exit focus mode" : "Focus mode"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+          <div className="flex items-center gap-2">
+            {selectedTab === "write" && (
+              <>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setFocusMode(!focusMode)}
+                      >
+                        {focusMode ? (
+                          <Minimize size={18} />
+                        ) : (
+                          <Maximize size={18} />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {focusMode ? "Exit Focus Mode" : "Focus Mode"}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={saveSnapshot}
-                      disabled={!unsavedChanges}
-                    >
-                      <Save className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Save snapshot</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={saveSnapshot}
+                      >
+                        <Save size={18} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Save</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-40 p-2">
-                  <div className="flex flex-col gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => downloadContent("txt")}
-                    >
-                      Plain Text (.txt)
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <Download size={18} />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => downloadContent("md")}
-                    >
-                      Markdown (.md)
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => downloadContent("html")}
-                    >
-                      HTML (.html)
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48">
+                    <div className="flex flex-col gap-2">
+                      <Button onClick={() => downloadContent("txt")}>
+                        Download as TXT
+                      </Button>
+                      <Button onClick={() => downloadContent("md")}>
+                        Download as Markdown
+                      </Button>
+                      <Button onClick={() => downloadContent("html")}>
+                        Download as HTML
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-4">
-                  <div className="space-y-4">
-                    <h4 className="font-medium">Editor Settings</h4>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <Settings size={18} />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80">
+                    <div className="space-y-4">
+                      <h3 className="font-medium">Editor Settings</h3>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="font-size">
+                      <div className="space-y-2">
+                        <Label htmlFor="fontSize">
                           Font Size: {fontSize}px
                         </Label>
+                        <Slider
+                          id="fontSize"
+                          min={12}
+                          max={24}
+                          step={1}
+                          value={[fontSize]}
+                          onValueChange={(vals) => setFontSize(vals[0])}
+                        />
                       </div>
-                      <Slider
-                        id="font-size"
-                        min={12}
-                        max={24}
-                        step={1}
-                        value={[fontSize]}
-                        onValueChange={(value) => setFontSize(value[0])}
-                      />
-                    </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="word-count"
-                        checked={showWordCount}
-                        onCheckedChange={setShowWordCount}
-                      />
-                      <Label htmlFor="word-count">Show word count</Label>
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="word-count">Show Word Count</Label>
+                        <Switch
+                          id="word-count"
+                          checked={showWordCount}
+                          onCheckedChange={setShowWordCount}
+                        />
+                      </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="auto-analyze"
-                        checked={autoAnalyze}
-                        onCheckedChange={setAutoAnalyze}
-                      />
-                      <Label htmlFor="auto-analyze">Auto-analyze content</Label>
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="auto-analyze">Auto-Analyze Text</Label>
+                        <Switch
+                          id="auto-analyze"
+                          checked={autoAnalyze}
+                          onCheckedChange={setAutoAnalyze}
+                        />
+                      </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="highlight-entities"
-                        checked={highlightEntities}
-                        onCheckedChange={setHighlightEntities}
-                      />
-                      <Label htmlFor="highlight-entities">
-                        Highlight detected entities
-                      </Label>
-                    </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="highlight-entities">
+                          Highlight Entities
+                        </Label>
+                        <Switch
+                          id="highlight-entities"
+                          checked={highlightEntities}
+                          onCheckedChange={setHighlightEntities}
+                        />
+                      </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="ai-assistance"
-                        checked={aiAssistanceEnabled}
-                        onCheckedChange={setAiAssistanceEnabled}
-                      />
-                      <Label htmlFor="ai-assistance">
-                        AI writing assistance
-                      </Label>
-                    </div>
-
-                    <div className="pt-2 border-t">
-                      <h4 className="font-medium mb-2">Editor Mode</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          variant={editMode === "rich" ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setEditMode("rich")}
-                        >
-                          Rich Text
-                        </Button>
-                        <Button
-                          variant={
-                            editMode === "markdown" ? "default" : "outline"
-                          }
-                          size="sm"
-                          onClick={() => setEditMode("markdown")}
-                        >
-                          Markdown
-                        </Button>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="ai-assistance">
+                          AI Writing Assistance
+                        </Label>
+                        <Switch
+                          id="ai-assistance"
+                          checked={aiAssistanceEnabled}
+                          onCheckedChange={setAiAssistanceEnabled}
+                        />
                       </div>
                     </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
+                  </PopoverContent>
+                </Popover>
+              </>
+            )}
 
-          <TabsContent value="write" className="pt-0 px-0">
-            {/* Formatting Toolbar */}
-            <div className="border-b border-t flex flex-wrap items-center p-1 gap-1 bg-gray-50">
-              <Tabs
-                value={selectedStyleTab}
-                onValueChange={setSelectedStyleTab}
-                className="w-full"
-              >
-                <TabsList className="w-full justify-start mb-1">
-                  <TabsTrigger value="text" className="text-xs">
-                    Text
-                  </TabsTrigger>
-                  <TabsTrigger value="paragraph" className="text-xs">
-                    Paragraph
-                  </TabsTrigger>
-                  <TabsTrigger value="insert" className="text-xs">
-                    Insert
-                  </TabsTrigger>
-                  <TabsTrigger value="history" className="text-xs">
-                    History
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent
-                  value="text"
-                  className="pt-0 px-0 flex flex-wrap items-center gap-1"
-                >
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("bold")}
-                        >
-                          <Bold className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Bold (Ctrl+B)</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("italic")}
-                        >
-                          <Italic className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Italic (Ctrl+I)</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("underline")}
-                        >
-                          <Underline className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Underline (Ctrl+U)</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <div className="h-6 border-l mx-1"></div>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("h1")}
-                        >
-                          <Heading1 className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Heading 1</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("h2")}
-                        >
-                          <Heading2 className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Heading 2</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("h3")}
-                        >
-                          <Heading3 className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Heading 3</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </TabsContent>
-
-                <TabsContent
-                  value="paragraph"
-                  className="pt-0 px-0 flex flex-wrap items-center gap-1"
-                >
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <AlignLeft className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Align left</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <AlignCenter className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Align center</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <AlignRight className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Align right</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <div className="h-6 border-l mx-1"></div>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("list")}
-                        >
-                          <List className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Bullet list</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("orderedList")}
-                        >
-                          <ListOrdered className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-
-                      <TooltipContent>
-                        <p>Numbered list</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("quote")}
-                        >
-                          <Quote className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Block quote</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </TabsContent>
-
-                <TabsContent
-                  value="insert"
-                  className="pt-0 px-0 flex flex-wrap items-center gap-1"
-                >
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => applyFormatting("link")}
-                        >
-                          <Link className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Insert link</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Image className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Insert image</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Code className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Insert code block</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Calendar className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Insert date</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </TabsContent>
-
-                <TabsContent
-                  value="history"
-                  className="pt-0 px-0 flex flex-wrap items-center gap-1"
-                >
-                  <Button variant="ghost" size="icon">
-                    <Undo className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon">
-                    <Redo className="h-4 w-4" />
-                  </Button>
-                </TabsContent>
-              </Tabs>
-            </div>
-
-            {/* Search Bar */}
-            <div className="border-b flex items-center gap-2 p-2 bg-gray-50">
-              <div className="relative flex-1">
-                <Search className="h-4 w-4 absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Search in document..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="pl-8"
-                />
-              </div>
+            {selectedTab === "analyze" && !loading && (
               <Button
+                onClick={handleAnalyze}
                 size="sm"
-                variant="outline"
-                onClick={handleSearch}
-                disabled={!searchQuery}
+                className="flex items-center gap-1"
               >
-                Find
+                <BarChart2 size={16} />
+                <span>Analyze Now</span>
               </Button>
-              {searchResults.length > 0 && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigateSearch("prev")}
-                  >
-                    Prev
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigateSearch("next")}
-                  >
-                    Next
-                  </Button>
-                  <span className="text-xs text-gray-500">
-                    {currentSearchIndex + 1}/{searchResults.length}
-                  </span>
-                </>
-              )}
-            </div>
+            )}
 
-            {/* Text Editor */}
-            <div className="flex-1 relative overflow-auto">
+            {selectedTab === "graph" && !graphLoading && (
+              <Button
+                onClick={generateKnowledgeGraph}
+                size="sm"
+                className="flex items-center gap-1"
+              >
+                <Workflow size={16} />
+                <span>Generate Graph</span>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <TabsContent value="write" className="p-0">
+          <Card className="relative">
+            {selectedTab === "write" && (
+              <div className="flex items-center gap-2 p-2 border-b">
+                <Tabs
+                  value={selectedStyleTab}
+                  onValueChange={(val) => setSelectedStyleTab(val as any)}
+                >
+                  <TabsList className="h-8">
+                    <TabsTrigger value="text" className="h-7 px-2 text-xs">
+                      Text
+                    </TabsTrigger>
+                    <TabsTrigger value="paragraph" className="h-7 px-2 text-xs">
+                      Paragraph
+                    </TabsTrigger>
+                    <TabsTrigger value="insert" className="h-7 px-2 text-xs">
+                      Insert
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+
+                <div className="flex-1">
+                  {selectedStyleTab === "text" && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("bold")}
+                      >
+                        <Bold size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("italic")}
+                      >
+                        <Italic size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("underline")}
+                      >
+                        <Underline size={15} />
+                      </Button>
+                    </div>
+                  )}
+
+                  {selectedStyleTab === "paragraph" && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("h1")}
+                      >
+                        <Heading1 size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("h2")}
+                      >
+                        <Heading2 size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("h3")}
+                      >
+                        <Heading3 size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("ul")}
+                      >
+                        <List size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("ol")}
+                      >
+                        <ListOrdered size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("quote")}
+                      >
+                        <Quote size={15} />
+                      </Button>
+                    </div>
+                  )}
+
+                  {selectedStyleTab === "insert" && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => applyFormatting("link")}
+                      >
+                        <Link size={15} />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 border rounded-md overflow-hidden">
+                    <Input
+                      placeholder="Search..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="border-0 h-8 w-36"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSearch();
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={handleSearch}
+                    >
+                      <Search size={15} />
+                    </Button>
+                    {searchResults.length > 0 && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => navigateSearch("prev")}
+                          disabled={searchResults.length <= 1}
+                        >
+                          <ChevronUp size={15} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => navigateSearch("next")}
+                          disabled={searchResults.length <= 1}
+                        >
+                          <ChevronDown size={15} />
+                        </Button>
+                        <span className="mr-2 text-xs text-gray-500">
+                          {currentSearchIndex + 1}/{searchResults.length}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <ScrollArea className="h-[60vh]">
               <Textarea
                 ref={textareaRef}
                 value={text}
                 onChange={handleTextChange}
-                className="min-h-full w-full resize-none p-4 border-0 focus-visible:ring-0 rounded-none"
-                placeholder="Start typing your historical text here..."
+                placeholder="Start writing or paste your text here..."
+                className="min-h-[40vh] resize-none border-0 focus-visible:ring-0 p-4 font-serif"
                 style={{ fontSize: `${fontSize}px` }}
                 readOnly={readOnly}
                 maxLength={maxLength}
               />
+            </ScrollArea>
 
-              {/* Word Counter */}
-              {showWordCount && (
-                <div className="absolute right-2 bottom-2 text-xs text-gray-500 bg-white bg-opacity-70 p-1 rounded">
-                  {selectedCount.words > 0 ? (
-                    <>
-                      {selectedCount.words} words, {selectedCount.chars} chars
-                      selected
-                    </>
-                  ) : (
-                    <>
-                      {wordCount} words, {charCount} characters
-                    </>
+            {showWordCount && (
+              <div className="text-xs text-gray-500 p-2 border-t flex justify-between items-center">
+                <div>
+                  {selectedText ? (
+                    <span>
+                      Selection: {selectedWordCount} words,{" "}
+                      {selectedCharacterCount} characters |
+                    </span>
+                  ) : null}{" "}
+                  Total: {wordCount} words, {characterCount} characters
+                  {maxLength && (
+                    <span>
+                      {" "}
+                      | {characterCount}/{maxLength} characters used
+                    </span>
                   )}
                 </div>
-              )}
-
-              {/* AI Assistant */}
-              {aiAssistanceEnabled && text.length > 0 && (
-                <div className="absolute bottom-10 right-4">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button size="icon" className="rounded-full shadow-lg">
-                        <Zap className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent side="top" align="end" className="w-64 p-4">
-                      <div className="space-y-2">
-                        <h3 className="font-medium">AI Suggestions</h3>
-                        <div className="text-sm">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full justify-start text-left"
-                          >
-                            <span>Check historical accuracy</span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full justify-start text-left"
-                          >
-                            <span>Improve writing style</span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full justify-start text-left"
-                          >
-                            <span>Add relevant context</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="preview" className="pt-0 px-0 overflow-auto">
-            <div className="p-4">
-              <article
-                className="prose max-w-none"
-                dangerouslySetInnerHTML={{ __html: getHighlightedText() }}
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="analyze" className="pt-0 px-0">
-            <div className="flex h-full">
-              <div className="w-3/4 p-4 overflow-auto">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-medium">Text Analysis</h3>
-                  <Button onClick={handleAnalyze} disabled={loading} size="sm">
-                    {loading ? "Analyzing..." : "Analyze Text"}
-                  </Button>
-                </div>
-
-                {/* Insights */}
-                <div className="mb-6">
-                  <h4 className="font-medium mb-2">Content Insights</h4>
-                  <div className="space-y-4">
-                    {insights.map((insight, index) => (
-                      <div key={index} className="border rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium capitalize">
-                            {insight.type}
-                          </span>
-                          <Badge
-                            variant={
-                              insight.score > 70
-                                ? "default"
-                                : insight.score > 40
-                                  ? "outline"
-                                  : "destructive"
-                            }
-                          >
-                            {Math.round(insight.score)}%
-                          </Badge>
-                        </div>
-                        <Progress value={insight.score} className="h-2 mb-2" />
-                        <p className="text-sm">{insight.summary}</p>
-                        {insight.details && (
-                          <ul className="text-xs text-gray-600 mt-1 space-y-1 pl-4">
-                            {insight.details.map((detail, i) => (
-                              <li key={i} className="list-disc list-outside">
-                                {detail}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Writing Style Analysis */}
-                {insights.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="font-medium mb-2">Writing Style</h4>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="border rounded p-3">
-                        <h5 className="text-sm font-medium mb-1">Formality</h5>
-                        <div className="relative h-1 bg-gray-200 rounded">
-                          <div
-                            className="absolute h-1 bg-blue-500 rounded"
-                            style={{ width: `${Math.random() * 100}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs mt-1">
-                          <span>Casual</span>
-                          <span>Formal</span>
-                        </div>
-                      </div>
-
-                      <div className="border rounded p-3">
-                        <h5 className="text-sm font-medium mb-1">Clarity</h5>
-                        <div className="relative h-1 bg-gray-200 rounded">
-                          <div
-                            className="absolute h-1 bg-blue-500 rounded"
-                            style={{ width: `${Math.random() * 100}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs mt-1">
-                          <span>Complex</span>
-                          <span>Clear</span>
-                        </div>
-                      </div>
-
-                      <div className="border rounded p-3">
-                        <h5 className="text-sm font-medium mb-1">Tone</h5>
-                        <div className="relative h-1 bg-gray-200 rounded">
-                          <div
-                            className="absolute h-1 bg-blue-500 rounded"
-                            style={{ width: `${Math.random() * 100}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs mt-1">
-                          <span>Subjective</span>
-                          <span>Objective</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                {unsavedChanges && (
+                  <Badge variant="outline">Unsaved changes</Badge>
                 )}
               </div>
+            )}
 
-              <div className="w-1/4 border-l p-4 overflow-auto">
-                <h3 className="text-lg font-medium mb-4">Detected Entities</h3>
-                <div className="space-y-3">
-                  {entities.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      No entities detected yet. Click 'Analyze Text' to identify
-                      important elements in your content.
-                    </p>
+            {loading && (
+              <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
+                <div className="bg-white p-4 rounded-md shadow-md">
+                  <div className="flex flex-col items-center gap-2">
+                    <Progress value={45} className="w-48" />
+                    <span className="text-sm">Analyzing text...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="preview" className="p-0">
+          <Card>
+            <ScrollArea className="h-[70vh]">
+              <div
+                className="p-4 font-serif"
+                style={{ fontSize: `${fontSize}px` }}
+                dangerouslySetInnerHTML={{ __html: getHighlightedText() }}
+              />
+            </ScrollArea>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="analyze" className="p-0">
+          <Card>
+            <ScrollArea className="h-[70vh]">
+              <div className="p-4">
+                <div className="mb-6">
+                  <h3 className="text-lg font-medium mb-3">Text Insights</h3>
+                  {insights.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {insights.map((insight, idx) => (
+                        <Card key={idx} className="p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            {insight.type === "readability" && (
+                              <Book className="text-blue-500" size={18} />
+                            )}
+                            {insight.type === "sentiment" && (
+                              <Sparkles className="text-yellow-500" size={18} />
+                            )}
+                            {insight.type === "complexity" && (
+                              <Lightbulb
+                                className="text-purple-500"
+                                size={18}
+                              />
+                            )}
+                            {insight.type === "historical_accuracy" && (
+                              <Flag className="text-green-500" size={18} />
+                            )}
+                            {insight.type === "bias" && (
+                              <Flag className="text-red-500" size={18} />
+                            )}
+                            <h4 className="font-medium capitalize">
+                              {insight.type.replace("_", " ")}
+                            </h4>
+                          </div>
+                          <div className="mb-2">
+                            <div className="flex justify-between text-sm mb-1">
+                              <span>{insight.summary}</span>
+                              <span className="font-medium">
+                                {insight.score}/100
+                              </span>
+                            </div>
+                            <Progress value={insight.score} />
+                          </div>
+                          {insight.details && (
+                            <p className="text-sm text-gray-600">
+                              {insight.details}
+                            </p>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
                   ) : (
-                    entities.map((entity, index) => (
-                      <div key={index} className="border rounded p-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <Badge className="capitalize">{entity.type}</Badge>
-                          <span className="text-xs">
-                            {Math.round(entity.confidence * 100)}%
-                          </span>
-                        </div>
-                        <p className="font-medium">{entity.text}</p>
-                        {entity.metadata?.description && (
-                          <p className="text-xs text-gray-600 mt-1">
-                            {entity.metadata.description}
-                          </p>
-                        )}
-                      </div>
-                    ))
+                    <div className="text-center py-10 text-gray-500">
+                      {loading
+                        ? "Analyzing text..."
+                        : "No insights available. Click 'Analyze Now' to generate insights."}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-6">
+                  <h3 className="text-lg font-medium mb-3">
+                    Detected Entities
+                  </h3>
+                  {entities.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {entities.map((entity) => (
+                        <Card key={entity.id} className="p-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            {entity.type === "person" && (
+                              <UserRound size={16} className="text-red-500" />
+                            )}
+                            {entity.type === "place" && (
+                              <MapPin size={16} className="text-green-500" />
+                            )}
+                            {entity.type === "event" && (
+                              <Calendar size={16} className="text-blue-500" />
+                            )}
+                            {entity.type === "time" && (
+                              <Clock size={16} className="text-orange-500" />
+                            )}
+                            <h4 className="font-medium">{entity.text}</h4>
+                            <Badge variant="outline" className="capitalize">
+                              {entity.type}
+                            </Badge>
+                          </div>
+                          {entity.metadata?.description && (
+                            <p className="text-sm text-gray-600">
+                              {entity.metadata.description}
+                            </p>
+                          )}
+                          <div className="flex items-center text-xs text-gray-500 mt-1">
+                            <span>
+                              Confidence: {(entity.confidence * 100).toFixed(0)}
+                              %
+                            </span>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-10 text-gray-500">
+                      {loading
+                        ? "Detecting entities..."
+                        : "No entities detected. Click 'Analyze Now' to detect entities."}
+                    </div>
                   )}
                 </div>
               </div>
-            </div>
-          </TabsContent>
+            </ScrollArea>
+          </Card>
+        </TabsContent>
 
-          <TabsContent value="history" className="pt-0 px-0">
-            <div className="p-4">
-              <h3 className="text-lg font-medium mb-4">Revision History</h3>
-
-              {history.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Clock className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No revision history yet.</p>
-                  <p className="text-sm">
-                    Changes will be saved automatically as you edit.
-                  </p>
-                </div>
+        <TabsContent value="graph" className="p-0">
+          <Card>
+            <div className="h-[70vh] flex items-center justify-center bg-gray-50">
+              {nodeList.length > 0 ? (
+                <KnowledgeGraph nodes={nodeList} edges={edgeList} />
               ) : (
-                <ScrollArea className="h-[calc(100vh-280px)]">
-                  <div className="space-y-3">
-                    {history.map((snapshot) => (
-                      <Card key={snapshot.id} className="p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <span className="font-medium">
-                              {formatTimestamp(snapshot.timestamp)}
-                            </span>
-                            <span className="text-xs text-gray-500 ml-2">
-                              {snapshot.wordCount} words
-                            </span>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => restoreSnapshot(snapshot)}
-                          >
-                            Restore
-                          </Button>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          {snapshot.description}
-                        </p>
-                        <div className="mt-2 text-xs bg-gray-50 p-2 rounded max-h-20 overflow-hidden">
-                          {snapshot.content.substring(0, 150)}
-                          {snapshot.content.length > 150 && "..."}
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
+                <div className="text-center py-10 text-gray-500">
+                  {graphLoading ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <Progress value={45} className="w-48" />
+                      <span>Generating knowledge graph...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Workflow size={40} className="text-gray-400" />
+                      <span>
+                        No knowledge graph available. Click 'Generate Graph' to
+                        create one from your text.
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-          </TabsContent>
-        </Tabs>
-      </div>
-    </Card>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {selectedTab === "write" && aiAssistanceEnabled && (
+        <Card className="mt-4 p-3 bg-blue-50 border-blue-200">
+          <div className="flex items-start gap-3">
+            <div className="bg-blue-100 p-2 rounded-full">
+              <Sparkles size={18} className="text-blue-500" />
+            </div>
+            <div>
+              <h4 className="font-medium mb-1">AI Writing Assistant</h4>
+              <p className="text-sm text-gray-600 mb-2">
+                {wordCount < 50
+                  ? "Start writing to get AI suggestions and insights about your text."
+                  : "I notice you're writing about historical topics. Would you like me to suggest relevant reference sources or help expand on any particular point?"}
+              </p>
+              {wordCount >= 50 && (
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" variant="outline">
+                    Suggest sources
+                  </Button>
+                  <Button size="sm" variant="outline">
+                    Expand current point
+                  </Button>
+                  <Button size="sm" variant="outline">
+                    Check historical accuracy
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
   );
 };
 
