@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { useSupabaseClient } from "@supabase/auth-helpers-react";
+// import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import { Textarea } from "./ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -51,7 +51,13 @@ import {
   Minimize,
 } from "lucide-react";
 import KnowledgeGraph from "./KnowledgeGraph";
+import { createClient } from "@supabase/supabase-js";
 
+// Initialize the Supabase client (place this at the top of your file or in a utils file)
+const supabase = createClient(
+  "https://uimmjzuqdqxfqoikcexf.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpbW1qenVxZHF4ZnFvaWtjZXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAwNDA1NTcsImV4cCI6MjA1NTYxNjU1N30.gSdv5Q0seyNiWhjEwXCzKzxYN1TUTFGxOpKUZtF06J0",
+);
 // Type definitions
 export type EntityType =
   | "person"
@@ -145,7 +151,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
   showAnalytics = true,
 }) => {
   // Supabase client for database operations
-  const supabase = useSupabaseClient();
+  // const supabase = useSupabaseClient();
 
   // Component state
   const [text, setText] = useState(initialContent);
@@ -579,18 +585,19 @@ const TextEditor: React.FC<TextEditorProps> = ({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+  // Make sure you have the Supabase client properly initialized before using it
 
-  // Generate knowledge graph from text
+  // Updated generateKnowledgeGraph function with error checking
   const generateKnowledgeGraph = async () => {
     setGraphLoading(true);
-
     try {
-      // Check if supabase client is available
+      // Check if supabase and supabase.functions are defined
       if (!supabase || !supabase.functions) {
-        throw new Error("Supabase client not available");
+        console.error("Supabase client or functions not available");
+        throw new Error("Supabase client not properly initialized");
       }
 
-      // Call Supabase Edge Function to generate knowledge graph
+      console.log("Invoking Supabase function: generateKnowledgeGraph");
       const { data, error } = await supabase.functions.invoke(
         "generateKnowledgeGraph",
         {
@@ -598,28 +605,30 @@ const TextEditor: React.FC<TextEditorProps> = ({
         },
       );
 
+      console.log("Supabase function response:", { data, error });
+
       if (error) {
         throw new Error(error.message);
       }
 
       if (data?.nodes && data?.edges) {
+        console.log("Knowledge graph data received:", {
+          nodes: data.nodes,
+          edges: data.edges,
+        });
         setNodeList(data.nodes);
         setEdgeList(data.edges);
       }
     } catch (err) {
       console.error("Knowledge graph generation error:", err);
+      console.log("Falling back to mock data");
+
       // Fallback to mock data
-      const safeEntities = entities || [];
-      const mockNodes: Node[] = safeEntities.map((entity, index) => ({
-        id: entity.id || `entity-${index}`,
-        type: entity.type || "concept",
-        label: entity.text || `Entity ${index}`,
-        description: entity.metadata?.description || "",
-        // Add fixed positions for stability
-        x: 200 + index * 50,
-        y: 200 + index * 30,
-        fx: 200 + index * 50,
-        fy: 200 + index * 30,
+      const mockNodes: Node[] = entities.map((entity, index) => ({
+        id: entity.id,
+        type: entity.type,
+        label: entity.text,
+        description: entity.metadata?.description,
       }));
 
       const mockEdges: Edge[] = [];
@@ -633,13 +642,15 @@ const TextEditor: React.FC<TextEditorProps> = ({
         });
       }
 
+      console.log("Mock Nodes:", mockNodes);
+      console.log("Mock Edges:", mockEdges);
       setNodeList(mockNodes);
       setEdgeList(mockEdges);
     } finally {
       setGraphLoading(false);
+      console.log("Graph loading complete.");
     }
   };
-
   // Auto-save effect
   useEffect(() => {
     if (autoSave && unsavedChanges) {

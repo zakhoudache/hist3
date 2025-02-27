@@ -26,6 +26,11 @@ interface GraphRendererProps {
   setShowConfirmDelete: (show: boolean) => void;
   setMidEdgePoint: (point: { x: number; y: number; edge: Edge } | null) => void;
   setShowMidEdgeMenu: (show: boolean) => void;
+  setEdgeCreationState: (state: {
+    source: string | null;
+    target: null;
+  }) => void;
+  setFocusedNodeId: (id: string | null) => void;
   createNewEdge: (sourceId: string, targetId: string) => void;
   createNodeFromEdge: (relationship: string) => void;
   createNewNodeFromScratch: (
@@ -57,6 +62,8 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
   setShowConfirmDelete,
   setMidEdgePoint,
   setShowMidEdgeMenu,
+  setEdgeCreationState,
+  setFocusedNodeId,
   createNewEdge,
   createNodeFromEdge,
   createNewNodeFromScratch,
@@ -796,61 +803,12 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
         .text("Close");
     }
 
-    // Update the focused node highlighting if needed
-    if (focusedNodeId) {
-      const focusNode = processedNodeList.find((n) => n.id === focusedNodeId);
-      if (focusNode) {
-        // Highlight the focused node and related edges/nodes
-        const relatedNodes = new Set<string>();
-        edgeList.forEach((edge) => {
-          if (edge.source === focusedNodeId) {
-            relatedNodes.add(edge.target as string);
-          } else if (edge.target === focusedNodeId) {
-            relatedNodes.add(edge.source as string);
-          }
-        });
-
-        // Dim all nodes and links
-        svg
-          .selectAll(".node")
-          .classed(
-            "dimmed",
-            (d: Node) => d.id !== focusedNodeId && !relatedNodes.has(d.id),
-          );
-
-        svg
-          .selectAll(".link")
-          .classed(
-            "dimmed",
-            (d: Edge) =>
-              d.source !== focusedNodeId && d.target !== focusedNodeId,
-          );
-
-        // Highlight the focused node and direct connections
-        svg
-          .selectAll(".node")
-          .classed(
-            "highlighted",
-            (d: Node) => d.id === focusedNodeId || relatedNodes.has(d.id),
-          );
-
-        svg
-          .selectAll(".link")
-          .classed(
-            "highlighted",
-            (d: Edge) =>
-              d.source === focusedNodeId || d.target === focusedNodeId,
-          );
-      }
-    }
-
-    // Functions to handle node dragging
+    // Implement node drag behavior
     function dragstarted(event: any, d: Node) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
       d.fx = d.x;
       d.fy = d.y;
-
-      // Stop event propagation to prevent other handlers
+      // Stop event propagation to prevent click events from firing
       event.sourceEvent.stopPropagation();
     }
 
@@ -861,79 +819,115 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
 
     function dragended(event: any, d: Node) {
       if (!event.active) simulation.alphaTarget(0);
-      // Keep the node position fixed after dragging
-      // (comment these out to allow nodes to move again after drag)
+      // Keep position fixed where user dropped it
       // d.fx = null;
       // d.fy = null;
     }
 
-    // Function to calculate edge path with curves
-    const calculateEdgePath = (d: Edge) => {
-      const source = processedNodeList.find((n) => n.id === d.source);
-      const target = processedNodeList.find((n) => n.id === d.target);
-
-      if (
-        !source ||
-        source.x === undefined ||
-        source.y === undefined ||
-        !target ||
-        target.x === undefined ||
-        target.y === undefined
-      ) {
-        return "M0,0L0,0";
-      }
-
-      // Check if there are multiple edges between the same nodes
-      const parallelEdges = edgeList.filter(
-        (e) =>
-          (e.source === d.source && e.target === d.target) ||
-          (e.source === d.target && e.target === d.source),
+    // Highlight connected nodes when focusing
+    if (focusedNodeId) {
+      // Find the focused node and its connected edges
+      const connectedEdges = edgeList.filter(
+        (e) => e.source === focusedNodeId || e.target === focusedNodeId,
       );
+      const connectedNodeIds = new Set<string>();
 
-      if (parallelEdges.length > 1) {
-        // Calculate edge index
-        const edgeIndex = parallelEdges.findIndex((e) => e.id === d.id);
-        const curveOffset = 15 + edgeIndex * 10;
+      connectedEdges.forEach((e) => {
+        connectedNodeIds.add(e.source as string);
+        connectedNodeIds.add(e.target as string);
+      });
 
-        // Define curved path
-        return d3.linkHorizontal()({
-          source: [source.x, source.y],
-          target: [target.x, target.y],
-          curvature: 0.2 + edgeIndex * 0.1,
-        }) as string;
-      }
+      // Highlight the focused node and connected nodes/edges
+      svg
+        .selectAll(".node")
+        .classed("highlighted", (d) => d.id === focusedNodeId)
+        .classed(
+          "dimmed",
+          (d) => d.id !== focusedNodeId && !connectedNodeIds.has(d.id),
+        );
 
-      // Simple direct edge
-      return d3.linkHorizontal()({
-        source: [source.x, source.y],
-        target: [target.x, target.y],
-      }) as string;
-    };
+      svg
+        .selectAll(".link")
+        .classed(
+          "highlighted",
+          (d) => d.source === focusedNodeId || d.target === focusedNodeId,
+        )
+        .classed(
+          "dimmed",
+          (d) => d.source !== focusedNodeId && d.target !== focusedNodeId,
+        );
+    }
 
-    // Update function for simulation ticks
+    // Update node and edge positions on each simulation tick
     simulation.on("tick", () => {
-      // Keep nodes within the viewport bounds
-      processedNodeList.forEach((node) => {
-        if (node.x !== undefined && node.y !== undefined) {
-          node.x = Math.max(50, Math.min(width - 50, node.x));
-          node.y = Math.max(50, Math.min(height - 50, node.y));
+      // Update curved edge paths
+      link.attr("d", (d: any) => {
+        const sourceNode = processedNodeList.find(
+          (n) => n.id === d.source.id || n.id === d.source,
+        );
+        const targetNode = processedNodeList.find(
+          (n) => n.id === d.target.id || n.id === d.target,
+        );
+
+        if (
+          !sourceNode ||
+          !targetNode ||
+          sourceNode.x === undefined ||
+          sourceNode.y === undefined ||
+          targetNode.x === undefined ||
+          targetNode.y === undefined
+        ) {
+          return "";
         }
+
+        const dx = targetNode.x - sourceNode.x;
+        const dy = targetNode.y - sourceNode.y;
+        const dr = Math.sqrt(dx * dx + dy * dy);
+
+        // Straight lines for short distances, curved for longer
+        if (dr < 100) {
+          return `M${sourceNode.x},${sourceNode.y}L${targetNode.x},${targetNode.y}`;
+        } else {
+          // Calculate curve based on distance
+          const curvature = Math.min(0.3, 30 / dr);
+          const midX = (sourceNode.x + targetNode.x) / 2;
+          const midY = (sourceNode.y + targetNode.y) / 2;
+
+          // Offset the curve
+          const offsetX = -dy * curvature;
+          const offsetY = dx * curvature;
+
+          return `M${sourceNode.x},${sourceNode.y} Q${midX + offsetX},${midY + offsetY} ${targetNode.x},${targetNode.y}`;
+        }
+      });
+
+      // Update edge hitbox paths to match
+      g.selectAll(".edge-hitbox").attr("d", function () {
+        const correspondingEdge = d3.select(this.parentNode).select(".link");
+        return correspondingEdge.attr("d");
       });
 
       // Update node positions
       nodeGroups.attr("transform", (d) => {
         return `translate(${d.x || 0},${d.y || 0})`;
       });
-
-      // Update edge paths
-      link.attr("d", calculateEdgePath);
-
-      // Update edge hitboxes
-      g.selectAll(".edge-hitbox").attr("d", calculateEdgePath);
     });
 
+    // Handle window resize
+    const resizeHandler = () => {
+      simulation.force("center", d3.forceCenter(width / 2, height / 2));
+      simulation.alpha(0.3).restart();
+    };
+
+    window.addEventListener("resize", resizeHandler);
+
+    // Cleanup function
     return () => {
-      simulation.stop();
+      if (simulationRef.current) {
+        simulationRef.current.stop();
+      }
+      window.removeEventListener("resize", resizeHandler);
+      tooltip.remove();
     };
   }, [
     processedNodeList,
@@ -943,6 +937,10 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
     hoveredNode,
     hoveredEdge,
     edgeCreationState,
+    focusedNodeId,
+    midEdgePoint,
+    showMidEdgeMenu,
+    simulationRunning,
     setHoveredNode,
     setHoveredEdge,
     setActiveNode,
@@ -953,57 +951,40 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
     setEdgeToDelete,
     setConfirmDeleteType,
     setShowConfirmDelete,
-    createNewEdge,
-    createNodeFromEdge,
-    focusedNodeId,
-    midEdgePoint,
-    showMidEdgeMenu,
     setMidEdgePoint,
     setShowMidEdgeMenu,
+    setEdgeCreationState,
+    setFocusedNodeId,
+    createNewEdge,
+    createNodeFromEdge,
     createNewNodeFromScratch,
-    simulationRunning,
+    focusOnNode,
   ]);
 
-  // Add custom graph controls
   return (
     <div className="relative w-full h-full">
       <svg
         ref={svgRef}
         width={width}
         height={height}
-        className="bg-gray-50 w-full h-full"
-      />
+        className="w-full h-full bg-gray-50 rounded-lg"
+      >
+        {/* Graph will be rendered here by D3 */}
+      </svg>
 
-      {/* Graph controls overlay */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+      {/* Controls overlay */}
+      <div className="absolute top-4 right-4 flex flex-col gap-2">
         <button
-          className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
-          onClick={resetZoom}
-          title="Reset zoom"
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="16"></line>
-            <line x1="8" y1="12" x2="16" y2="12"></line>
-          </svg>
-        </button>
-
-        <button
-          className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
           onClick={toggleSimulation}
+          className={`p-2 rounded-full ${
+            simulationRunning ? "bg-blue-500 text-white" : "bg-gray-200"
+          }`}
           title={simulationRunning ? "Pause layout" : "Resume layout"}
         >
           {simulationRunning ? (
             <svg
-              width="24"
-              height="24"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -1014,8 +995,8 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
             </svg>
           ) : (
             <svg
-              width="24"
-              height="24"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -1025,44 +1006,54 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
             </svg>
           )}
         </button>
+
+        <button
+          onClick={resetZoom}
+          className="p-2 rounded-full bg-gray-200 hover:bg-gray-300"
+          title="Reset zoom"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+        </button>
       </div>
 
-      {/* Edge creation indicator */}
+      {/* Edge creation mode indicator */}
       {edgeCreationState.source && (
-        <div className="absolute top-4 left-4 bg-green-500 text-white p-2 rounded-md shadow-md">
-          <span>
-            Creating connection from node. Click target node or press Esc to
-            cancel.
-          </span>
+        <div className="absolute top-4 left-4 bg-green-100 p-2 rounded-md border border-green-500">
+          <div className="flex items-center gap-2">
+            <span className="text-green-800">Connecting node...</span>
+            <button
+              onClick={() =>
+                setEdgeCreationState({ source: null, target: null })
+              }
+              className="p-1 rounded-full bg-green-200 hover:bg-green-300"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div className="text-sm text-green-700">
+            Click on another node to create connection, or press ESC to cancel
+          </div>
         </div>
       )}
-
-      {/* Legend overlay */}
-      <div className="absolute top-4 right-4 bg-white p-2 rounded-md shadow-md">
-        <div className="text-sm font-medium mb-1">Node Types</div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          <div className="flex items-center">
-            <span className="inline-block w-3 h-3 bg-blue-500 mr-1"></span>
-            <span className="text-xs">Person</span>
-          </div>
-          <div className="flex items-center">
-            <span className="inline-block w-3 h-3 bg-red-500 mr-1"></span>
-            <span className="text-xs">Event</span>
-          </div>
-          <div className="flex items-center">
-            <span className="inline-block w-3 h-3 bg-green-500 mr-1"></span>
-            <span className="text-xs">Place</span>
-          </div>
-          <div className="flex items-center">
-            <span className="inline-block w-3 h-3 bg-purple-500 mr-1"></span>
-            <span className="text-xs">Document</span>
-          </div>
-          <div className="flex items-center">
-            <span className="inline-block w-3 h-3 bg-amber-500 mr-1"></span>
-            <span className="text-xs">Concept</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

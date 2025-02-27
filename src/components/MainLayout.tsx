@@ -5,7 +5,7 @@ import {
   ResizablePanelGroup,
 } from "./ui/resizable";
 import TextEditor from "./TextEditor";
-import KnowledgeGraph from "./KnowledgeGraph";
+import KnowledgeGraph from "./KnowledgeGraph/RefactoredKnowledgeGraph";
 import EntityDetails from "./EntityDetails";
 import { Node, Edge } from "./KnowledgeGraph/types";
 import { Entity } from "@/services/entityExtraction";

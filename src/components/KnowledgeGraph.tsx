@@ -1061,7 +1061,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
           className="w-full"
         />
       </div>
-
       <div className="flex justify-between p-2 bg-gray-100 border-b">
         <div className="flex gap-2">
           <TooltipProvider>
@@ -1131,7 +1130,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
           </TooltipProvider>
         </div>
       </div>
-
       {edgeCreationState.source && (
         <div className="absolute top-4 right-4 bg-green-100 p-2 rounded-md shadow-md">
           <p className="text-sm text-green-800">
@@ -1147,16 +1145,16 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
           </Button>
         </div>
       )}
-
       <div className="relative flex-grow overflow-hidden">
-        <svg ref={svgRef} width="100%" height="100%" className="bg-white" />
+        <svg ref={svgRef} width="100%" height="100%" className="bg-white">
+          <></>
+        </svg>
         <div
           ref={popoverRef}
           className="absolute pointer-events-none"
           style={{ display: "none" }}
         />
       </div>
-
       <Dialog open={showNodeDialog} onOpenChange={setShowNodeDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1275,7 +1273,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={showEdgeDialog} onOpenChange={setShowEdgeDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1328,7 +1325,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={showConfirmDelete} onOpenChange={setShowConfirmDelete}>
         <DialogContent>
           <DialogHeader>
