@@ -96,3 +96,20 @@
   stroke: #f59e0b;
   stroke-width: 3;
 }
+
+/* Improve node stability and interaction */
+.node {
+  cursor: pointer;
+}
+
+.node-actions {
+  pointer-events: all;
+}
+
+.node.highlighted {
+  filter: brightness(1.2);
+}
+
+.node.dimmed {
+  opacity: 0.3;
+}

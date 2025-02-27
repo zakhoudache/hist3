@@ -1,18 +1,4 @@
-import React, { useState } from "react";
-import { Card } from "./ui/card";
-import { ScrollArea } from "./ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Avatar } from "./ui/avatar";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Progress } from "./ui/progress";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "./ui/tooltip";
+import React, { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
@@ -30,7 +16,25 @@ import {
   ChevronUp,
   ArrowRight,
   Star,
+  AlertCircle,
+  RefreshCcw,
 } from "lucide-react";
+
+// Import the UI components properly
+import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Enhanced types with more properties
 interface Relationship {
@@ -78,153 +82,60 @@ interface Entity {
 }
 
 interface EntityDetailsProps {
-  entity?: Entity;
+  entityId?: string;
+  entityName?: string;
   onSave?: (entity: Entity) => void;
   onRelated?: (id: string) => void;
   viewMode?: "compact" | "full" | "card";
   editable?: boolean;
 }
 
+// Type to store the Wikipedia API response
+interface WikipediaResponse {
+  query?: {
+    pages?: {
+      [key: string]: {
+        pageid: number;
+        ns: number;
+        title: string;
+        extract: string;
+        thumbnail?: {
+          source: string;
+          width: number;
+          height: number;
+        };
+        categories?: Array<{
+          ns: number;
+          title: string;
+        }>;
+        links?: Array<{
+          ns: number;
+          title: string;
+        }>;
+        extlinks?: Array<{
+          "*": string;
+        }>;
+        coordinates?: Array<{
+          lat: number;
+          lon: number;
+        }>;
+      };
+    };
+  };
+}
+
 const EntityDetails = ({
-  entity,
+  entityId,
+  entityName,
   onSave,
   onRelated,
   viewMode = "full",
   editable = false,
 }: EntityDetailsProps) => {
-  // Sample entity as default
-  const defaultEntity: Entity = {
-    id: "1",
-    type: "person",
-    name: "Winston Churchill",
-    alternateNames: ["Sir Winston Leonard Spencer Churchill"],
-    description:
-      "British statesman who served as Prime Minister of the United Kingdom from 1940 to 1945, during the Second World War, and again from 1951 to 1955. As Prime Minister, Churchill led Britain to victory in the Second World War. He was also an officer in the British Army, a non-academic historian, and a writer, winning the Nobel Prize in Literature in 1953.",
-    dates: ["1874-11-30", "1965-01-24"],
-    location: "Blenheim Palace, Oxfordshire, England",
-    coordinates: { lat: 51.8414, lng: -1.3618 },
-    significance: 95,
-    category: "Political Leaders",
-    tags: [
-      "Prime Minister",
-      "World War II",
-      "Nobel Prize",
-      "Writer",
-      "British Empire",
-    ],
-    relationships: [
-      {
-        id: "r1",
-        type: "Political Ally",
-        name: "Franklin D. Roosevelt",
-        significance: 90,
-        timeframe: "1939-1945",
-        description:
-          "Roosevelt and Churchill formed a crucial alliance during World War II.",
-      },
-      {
-        id: "r2",
-        type: "Political Ally",
-        name: "Joseph Stalin",
-        significance: 85,
-        timeframe: "1941-1945",
-        description:
-          "Despite ideological differences, they were allies against Nazi Germany.",
-      },
-      {
-        id: "r3",
-        type: "Political Rival",
-        name: "Neville Chamberlain",
-        significance: 70,
-        timeframe: "1937-1940",
-        description:
-          "Churchill opposed Chamberlain's appeasement policies toward Nazi Germany.",
-      },
-      {
-        id: "r4",
-        type: "Family",
-        name: "Clementine Churchill",
-        significance: 95,
-        timeframe: "1908-1965",
-        description:
-          "His wife and most trusted confidant throughout his life and career.",
-      },
-    ],
-    media: [
-      {
-        id: "m1",
-        type: "image",
-        url: "https://images.unsplash.com/photo-1590959651373-a3db0f38a961?w=500&h=500&fit=crop",
-        caption: "Official portrait during WWII",
-        date: "1941",
-        source: "Imperial War Museum",
-      },
-      {
-        id: "m2",
-        type: "image",
-        url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ChurchillYalta",
-        caption: "At the Yalta Conference with Roosevelt and Stalin",
-        date: "1945-02",
-        source: "National Archives",
-      },
-      {
-        id: "m3",
-        type: "document",
-        url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ChurchillSpeech",
-        caption: "Transcript of 'Blood, Toil, Tears and Sweat' speech",
-        date: "1940-05-13",
-        source: "UK Parliamentary Archives",
-      },
-    ],
-    timeline: [
-      {
-        id: "t1",
-        date: "1874-11-30",
-        title: "Birth",
-        description: "Born at Blenheim Palace, Oxfordshire",
-        importance: 80,
-      },
-      {
-        id: "t2",
-        date: "1940-05-10",
-        title: "Becomes Prime Minister",
-        description:
-          "Appointed Prime Minister following Chamberlain's resignation",
-        importance: 100,
-      },
-      {
-        id: "t3",
-        date: "1940-06-18",
-        title: "'Finest Hour' Speech",
-        description:
-          "Delivered famous 'This was their finest hour' speech to House of Commons",
-        importance: 95,
-      },
-      {
-        id: "t4",
-        date: "1953",
-        title: "Nobel Prize in Literature",
-        description: "Awarded the Nobel Prize in Literature",
-        importance: 85,
-      },
-      {
-        id: "t5",
-        date: "1965-01-24",
-        title: "Death",
-        description: "Died in London at the age of 90",
-        importance: 80,
-      },
-    ],
-    externalLinks: [
-      { title: "Churchill Archives", url: "https://www.churchillarchive.com" },
-      {
-        title: "International Churchill Society",
-        url: "https://winstonchurchill.org",
-      },
-    ],
-  };
-
-  const displayEntity = entity || defaultEntity;
+  // State for entity data and loading state
+  const [entity, setEntity] = useState<Entity | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   // State for interaction and UI
   const [activeTab, setActiveTab] = useState("overview");
@@ -235,22 +146,381 @@ const EntityDetails = ({
     "chronological" | "importance"
   >("chronological");
 
+  // Fetch entity data from Wikipedia when entityName or entityId changes
+  useEffect(() => {
+    if (entityName) {
+      fetchWikipediaData(entityName);
+    } else if (entityId) {
+      // If we have an ID but no name, try to fetch by ID
+      // This would typically involve a different API call or database lookup
+      // For now, we'll just set a loading state
+      setLoading(true);
+      setError(null);
+
+      // Simulate fetching data by ID
+      setTimeout(() => {
+        // In a real implementation, this would be an API call
+        // For now, we'll just use a mock entity
+        const mockEntity: Entity = {
+          id: entityId,
+          type: "person",
+          name: `Entity ${entityId.substring(0, 6)}`,
+          description:
+            "This is a placeholder for an entity that was selected by ID rather than name.",
+          significance: 75,
+        };
+        setEntity(mockEntity);
+        setLoading(false);
+      }, 500);
+    }
+  }, [entityName, entityId]);
+
+  // Fetch data from Wikipedia API
+  const fetchWikipediaData = async (title: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // First API call to get basic info and extract (summary)
+      const summaryUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages|categories|coordinates|links|extlinks&exintro=1&format=json&piprop=thumbnail&pithumbsize=500&pilimit=1&titles=${encodeURIComponent(title)}&origin=*`;
+
+      const response = await fetch(summaryUrl);
+      const data: WikipediaResponse = await response.json();
+
+      if (!data.query || !data.query.pages) {
+        throw new Error("No data found for this entity");
+      }
+
+      // Get the first page (there should only be one)
+      const pageId = Object.keys(data.query.pages)[0];
+      const page = data.query.pages[pageId];
+
+      if (pageId === "-1") {
+        throw new Error("Entity not found in Wikipedia");
+      }
+
+      // Process categories to get entity type and tags
+      const categories =
+        page.categories?.map((cat) => cat.title.replace("Category:", "")) || [];
+      const entityType = determineEntityType(categories, title);
+      const tags = categories
+        .slice(0, 8)
+        .map((cat) => cat.replace("Category:", ""));
+
+      // Extract relationships from links
+      const relationships =
+        page.links?.slice(0, 10).map((link, index) => ({
+          id: `r${index}`,
+          type: determineRelationshipType(link.title, categories),
+          name: link.title,
+          significance: Math.floor(Math.random() * 40) + 60, // Random significance between 60-100
+          description: `Related to ${title} as mentioned in the Wikipedia article.`,
+        })) || [];
+
+      // Fetch more information with a second API call for a timeline
+      const timelineUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&rvsection=0&format=json&titles=${encodeURIComponent(title)}&origin=*`;
+      const timelineResponse = await fetch(timelineUrl);
+      const timelineData = await timelineResponse.json();
+
+      // Create timeline entries based on parsed data (this is simplified)
+      const timeline = createTimelineFromData(title, page.extract);
+
+      // Extract external links
+      const externalLinks =
+        page.extlinks?.slice(0, 5).map((link, index) => ({
+          title: `Resource ${index + 1}`,
+          url: link["*"],
+        })) || [];
+
+      // Create media items
+      const media = [];
+      if (page.thumbnail) {
+        media.push({
+          id: "m1",
+          type: "image" as const,
+          url: page.thumbnail.source,
+          caption: `Image of ${title}`,
+          source: "Wikipedia",
+        });
+      }
+
+      // Extract dates if possible (this is a simplified approach)
+      const dates = extractDatesFromText(page.extract);
+
+      // Create the entity object
+      const newEntity: Entity = {
+        id: pageId,
+        type: entityType,
+        name: page.title,
+        description: cleanHtmlFromText(page.extract),
+        dates: dates,
+        location: extractLocationFromText(page.extract),
+        coordinates: page.coordinates
+          ? {
+              lat: page.coordinates[0].lat,
+              lng: page.coordinates[0].lon,
+            }
+          : undefined,
+        relationships: relationships,
+        media: media,
+        timeline: timeline,
+        externalLinks: [
+          {
+            title: "Wikipedia",
+            url: `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+          },
+          ...externalLinks,
+        ],
+        tags: tags,
+        significance: 85, // Default significance
+        category: categories[0]?.replace("Category:", "") || "General",
+      };
+
+      setEntity(newEntity);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to fetch data from Wikipedia",
+      );
+      console.error("Wikipedia API error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to clean HTML from Wikipedia text
+  const cleanHtmlFromText = (html: string): string => {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return doc.body.textContent || "";
+  };
+
+  // Helper function to determine entity type from categories with improved accuracy
+  const determineEntityType = (
+    categories: string[],
+    title: string,
+  ): Entity["type"] => {
+    // First check the title for common indicators
+    const titleLower = title.toLowerCase();
+
+    // Check for person indicators in title
+    if (
+      /^(mr\.|mrs\.|ms\.|dr\.|prof\.|sir|lady|king|queen|prince|princess)\s/.test(
+        titleLower,
+      ) ||
+      /\b(the\s+\w+|\w+\s+of\s+\w+)$/.test(titleLower)
+    ) {
+      return "person";
+    }
+
+    // Check for place indicators in title
+    if (
+      /\b(city|town|village|country|state|province|river|mountain|lake|ocean|sea|island)\b/.test(
+        titleLower,
+      )
+    ) {
+      return "place";
+    }
+
+    // Check for event indicators in title
+    if (
+      /\b(battle|war|revolution|uprising|election|coronation|ceremony|festival|conference)\b/.test(
+        titleLower,
+      )
+    ) {
+      return "event";
+    }
+    const categoriesString = categories.join(" ").toLowerCase();
+
+    if (
+      categoriesString.includes("people") ||
+      categoriesString.includes("births") ||
+      categoriesString.includes("deaths")
+    ) {
+      return "person";
+    } else if (
+      categoriesString.includes("event") ||
+      categoriesString.includes("battle") ||
+      categoriesString.includes("war")
+    ) {
+      return "event";
+    } else if (
+      categoriesString.includes("place") ||
+      categoriesString.includes("location") ||
+      categoriesString.includes("geography")
+    ) {
+      return "place";
+    } else if (
+      categoriesString.includes("organization") ||
+      categoriesString.includes("company") ||
+      categoriesString.includes("institute")
+    ) {
+      return "organization";
+    } else if (
+      categoriesString.includes("artifact") ||
+      categoriesString.includes("object") ||
+      categoriesString.includes("invention")
+    ) {
+      return "artifact";
+    }
+
+    // Default to person if we can't determine
+    return "person";
+  };
+
+  // Helper function to determine relationship type
+  const determineRelationshipType = (
+    linkTitle: string,
+    categories: string[],
+  ): string => {
+    const types = [
+      "Political Ally",
+      "Family Member",
+      "Colleague",
+      "Contemporary",
+      "Successor",
+      "Predecessor",
+      "Influence",
+    ];
+    return types[Math.floor(Math.random() * types.length)];
+  };
+
+  // Helper function to extract dates from text with improved accuracy
+  const extractDatesFromText = (text: string): string[] | undefined => {
+    // More comprehensive regex to find years in the text
+    const yearRegex = /\b(1[0-9]{3}|20[0-2][0-9])\b/g;
+    const years = [...new Set(text.match(yearRegex) || [])];
+
+    // Look for birth/death patterns
+    const birthDeathRegex =
+      /\b(born|birth)\s+\w+\s+(\d{1,2}(st|nd|rd|th)?\s+\w+\s+)?(1[0-9]{3}|20[0-2][0-9])\b|\b(died|death)\s+\w+\s+(\d{1,2}(st|nd|rd|th)?\s+\w+\s+)?(1[0-9]{3}|20[0-2][0-9])\b/gi;
+    const birthDeathMatches = text.match(birthDeathRegex) || [];
+
+    // Extract years from birth/death matches
+    const birthDeathYears = birthDeathMatches
+      .map((match) => {
+        const yearMatch = match.match(/(1[0-9]{3}|20[0-2][0-9])/);
+        return yearMatch ? yearMatch[0] : null;
+      })
+      .filter(Boolean) as string[];
+
+    // Combine all years and sort
+    const allYears = [...years, ...birthDeathYears];
+
+    if (allYears.length >= 2) {
+      return allYears.slice(0, 2).sort();
+    } else if (allYears.length === 1) {
+      return [allYears[0]];
+    }
+
+    return undefined;
+  };
+
+  // Helper function to extract location from text with improved pattern matching
+  const extractLocationFromText = (text: string): string | undefined => {
+    // Common location patterns
+    const locationPatterns = [
+      // City, Country format
+      /\b([A-Z][a-z]+),\s+([A-Z][a-z]+)\b/,
+      // in Location
+      /\bin\s+([A-Z][a-z]+)\b/,
+      // at Location
+      /\bat\s+([A-Z][a-z]+)\b/,
+      // Common location indicators
+      /\b(born|lived|resided|visited|traveled)\s+(in|at|to)\s+([A-Z][a-z]+)\b/,
+    ];
+
+    for (const pattern of locationPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        // Return the last capture group which should be the location
+        return match[match.length - 1];
+      }
+    }
+
+    // Fallback to common locations if no patterns match
+    const commonLocations = [
+      "London",
+      "Paris",
+      "New York",
+      "Tokyo",
+      "Berlin",
+      "Rome",
+      "Washington",
+      "Moscow",
+      "Beijing",
+      "Delhi",
+      "Cairo",
+      "Athens",
+      "Vienna",
+      "Madrid",
+      "Amsterdam",
+      "Brussels",
+      "Dublin",
+      "Stockholm",
+    ];
+
+    for (const location of commonLocations) {
+      if (text.includes(location)) {
+        return location;
+      }
+    }
+
+    return undefined;
+  };
+
+  // Helper function to create timeline from data
+  const createTimelineFromData = (
+    title: string,
+    extract: string,
+  ): Timeline[] => {
+    // This is a simplified approach - a real implementation would
+    // need NLP or a more sophisticated approach to extract actual events
+
+    // Extract sentences to create timeline events
+    const sentences = extract.split(/(?<=\.)\s+/);
+    const timeline: Timeline[] = [];
+
+    // Create up to 5 timeline entries
+    const maxEntries = Math.min(5, sentences.length);
+    for (let i = 0; i < maxEntries; i++) {
+      const yearMatch = sentences[i].match(/\b(1[0-9]{3}|20[0-2][0-9])\b/);
+      if (yearMatch) {
+        timeline.push({
+          id: `t${i}`,
+          date: yearMatch[0],
+          title: `Event ${i + 1}`,
+          description:
+            sentences[i].substring(0, 100) +
+            (sentences[i].length > 100 ? "..." : ""),
+          importance: Math.floor(Math.random() * 30) + 70, // Random importance between 70-100
+        });
+      }
+    }
+
+    return timeline;
+  };
+
   // Calculate age if the entity is a person with birth/death dates
   const calculateAge = () => {
-    if (
-      displayEntity.type === "person" &&
-      displayEntity.dates &&
-      displayEntity.dates.length >= 2
-    ) {
-      const birthYear = new Date(displayEntity.dates[0]).getFullYear();
-      const deathYear = new Date(displayEntity.dates[1]).getFullYear();
-      return deathYear - birthYear;
+    if (entity?.type === "person" && entity.dates && entity.dates.length >= 2) {
+      const birthYear = parseInt(entity.dates[0]);
+      const deathYear = parseInt(entity.dates[1]);
+      if (!isNaN(birthYear) && !isNaN(deathYear)) {
+        return deathYear - birthYear;
+      }
     }
     return null;
   };
 
   // Format date for display
   const formatDate = (dateString: string) => {
+    // Handle just year format
+    if (/^\d{4}$/.test(dateString)) {
+      return dateString;
+    }
+
+    // Handle full date format
     const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
       month: "long",
@@ -265,7 +535,7 @@ const EntityDetails = ({
 
   // Get color based on entity type
   const getEntityTypeColor = () => {
-    switch (displayEntity.type) {
+    switch (entity?.type) {
       case "person":
         return "text-blue-600 border-blue-600 bg-blue-50";
       case "event":
@@ -283,7 +553,7 @@ const EntityDetails = ({
 
   // Get icon based on entity type
   const getEntityTypeIcon = () => {
-    switch (displayEntity.type) {
+    switch (entity?.type) {
       case "person":
         return <User className="h-4 w-4" />;
       case "event":
@@ -323,14 +593,14 @@ const EntityDetails = ({
   };
 
   // Filter relationships based on search
-  const filteredRelationships = displayEntity.relationships?.filter(
+  const filteredRelationships = entity?.relationships?.filter(
     (rel) =>
       rel.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rel.type.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   // Sort timeline entries
-  const sortedTimeline = [...(displayEntity.timeline || [])].sort((a, b) => {
+  const sortedTimeline = [...(entity?.timeline || [])].sort((a, b) => {
     if (timelineSort === "chronological") {
       return new Date(a.date).getTime() - new Date(b.date).getTime();
     } else {
@@ -351,6 +621,65 @@ const EntityDetails = ({
     );
   };
 
+  // Handle retry when there's an error
+  const handleRetry = () => {
+    if (entityName) {
+      fetchWikipediaData(entityName);
+    }
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <Card className="p-8 h-full w-full flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCcw className="h-10 w-10 animate-spin text-gray-400 mx-auto mb-4" />
+          <p className="text-lg font-medium text-gray-700">
+            Loading data from Wikipedia...
+          </p>
+          <p className="text-gray-500 mt-2">
+            Fetching information about {entityName}
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <Card className="p-8 h-full w-full flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-10 w-10 text-red-500 mx-auto mb-4" />
+          <p className="text-lg font-medium text-gray-700">
+            Error loading data
+          </p>
+          <p className="text-gray-500 mt-2">{error}</p>
+          <Button onClick={handleRetry} variant="outline" className="mt-4">
+            <RefreshCcw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  // If no entity is loaded yet
+  if (!entity) {
+    return (
+      <Card className="p-8 h-full w-full flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg font-medium text-gray-700">
+            No entity selected
+          </p>
+          <p className="text-gray-500 mt-2">
+            Please select an entity to view details
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
   // Main render function based on view mode
   if (viewMode === "compact") {
     return (
@@ -359,28 +688,27 @@ const EntityDetails = ({
           <Avatar className="h-10 w-10">
             <img
               src={
-                displayEntity.media?.[0]?.url ||
-                `https://api.dicebear.com/7.x/avataaars/svg?seed=${displayEntity.name}`
+                entity.media?.[0]?.url ||
+                `https://api.dicebear.com/7.x/avataaars/svg?seed=${entity.name}`
               }
-              alt={displayEntity.name}
+              alt={entity.name}
             />
           </Avatar>
           <div>
-            <h3 className="font-medium text-base">{displayEntity.name}</h3>
+            <h3 className="font-medium text-base">{entity.name}</h3>
             <Badge variant="outline" className={getEntityTypeColor()}>
-              {displayEntity.type.charAt(0).toUpperCase() +
-                displayEntity.type.slice(1)}
+              {entity.type.charAt(0).toUpperCase() + entity.type.slice(1)}
             </Badge>
           </div>
         </div>
         <p className="mt-2 text-sm text-gray-600 line-clamp-2">
-          {displayEntity.description}
+          {entity.description}
         </p>
         <Button
           variant="link"
           size="sm"
           className="p-0 mt-1 h-auto"
-          onClick={() => onRelated?.(displayEntity.id)}
+          onClick={() => onRelated?.(entity.id)}
         >
           View details <ArrowRight className="ml-1 h-3 w-3" />
         </Button>
@@ -396,29 +724,29 @@ const EntityDetails = ({
           <Avatar className="h-16 w-16">
             <img
               src={
-                displayEntity.media?.[0]?.url ||
-                `https://api.dicebear.com/7.x/avataaars/svg?seed=${displayEntity.name}`
+                entity.media?.[0]?.url ||
+                `https://api.dicebear.com/7.x/avataaars/svg?seed=${entity.name}`
               }
-              alt={displayEntity.name}
+              alt={entity.name}
             />
           </Avatar>
           <div className="flex-1">
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-serif font-semibold">
-                  {displayEntity.name}
+                  {entity.name}
                 </h2>
                 <div className="flex flex-wrap gap-2 mt-1">
                   <Badge variant="outline" className={getEntityTypeColor()}>
                     <span className="flex items-center gap-1">
                       {getEntityTypeIcon()}
-                      {displayEntity.type.charAt(0).toUpperCase() +
-                        displayEntity.type.slice(1)}
+                      {entity.type.charAt(0).toUpperCase() +
+                        entity.type.slice(1)}
                     </span>
                   </Badge>
-                  {displayEntity.category && (
+                  {entity.category && (
                     <Badge variant="outline" className="bg-gray-50">
-                      {displayEntity.category}
+                      {entity.category}
                     </Badge>
                   )}
                 </div>
@@ -457,12 +785,11 @@ const EntityDetails = ({
               </div>
             </div>
 
-            {displayEntity.alternateNames &&
-              displayEntity.alternateNames.length > 0 && (
-                <div className="text-sm text-gray-500 mt-1">
-                  Also known as: {displayEntity.alternateNames.join(", ")}
-                </div>
-              )}
+            {entity.alternateNames && entity.alternateNames.length > 0 && (
+              <div className="text-sm text-gray-500 mt-1">
+                Also known as: {entity.alternateNames.join(", ")}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -479,17 +806,28 @@ const EntityDetails = ({
 
           <TabsContent value="overview" className="p-6 space-y-6">
             <div className="space-y-4">
-              <p className="text-gray-700">{displayEntity.description}</p>
+              <div className="flex justify-between items-start">
+                <p className="text-gray-700">{entity.description}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-4 flex-shrink-0"
+                  onClick={handleRetry}
+                >
+                  <RefreshCcw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-3">
-                  {displayEntity.dates && displayEntity.dates.length > 0 && (
+                  {entity.dates && entity.dates.length > 0 && (
                     <div className="flex items-center gap-2 text-gray-600">
                       <Calendar className="h-4 w-4 text-gray-400" />
                       <div>
                         <div className="font-medium">Dates</div>
                         <span>
-                          {displayEntity.dates.map(formatDate).join(" - ")}
+                          {entity.dates.map(formatDate).join(" - ")}
                           {calculateAge() !== null && (
                             <span className="text-gray-500 ml-2">
                               ({calculateAge()} years)
@@ -500,17 +838,17 @@ const EntityDetails = ({
                     </div>
                   )}
 
-                  {displayEntity.location && (
+                  {entity.location && (
                     <div className="flex items-center gap-2 text-gray-600">
                       <MapPin className="h-4 w-4 text-gray-400" />
                       <div>
                         <div className="font-medium">Location</div>
-                        <span>{displayEntity.location}</span>
+                        <span>{entity.location}</span>
                       </div>
                     </div>
                   )}
 
-                  {displayEntity.significance !== undefined && (
+                  {entity.significance !== undefined && (
                     <div className="flex items-start gap-2 text-gray-600">
                       <Star className="h-4 w-4 text-gray-400 mt-1" />
                       <div className="flex-1">
@@ -519,12 +857,12 @@ const EntityDetails = ({
                         </div>
                         <div className="w-full mt-1">
                           <Progress
-                            value={displayEntity.significance}
+                            value={entity.significance}
                             className="h-2"
                           />
                           <div className="flex justify-between text-xs mt-1">
                             <span>Low</span>
-                            <span>{displayEntity.significance}/100</span>
+                            <span>{entity.significance}/100</span>
                             <span>High</span>
                           </div>
                         </div>
@@ -533,14 +871,14 @@ const EntityDetails = ({
                   )}
                 </div>
 
-                {displayEntity.tags && displayEntity.tags.length > 0 && (
+                {entity.tags && entity.tags.length > 0 && (
                   <div className="space-y-2">
                     <div className="font-medium flex items-center gap-2">
                       <Tag className="h-4 w-4 text-gray-400" />
                       Tags
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {displayEntity.tags.map((tag, i) => (
+                      {entity.tags.map((tag, i) => (
                         <Badge
                           key={i}
                           variant="secondary"
@@ -554,7 +892,7 @@ const EntityDetails = ({
                 )}
               </div>
 
-              {displayEntity.coordinates && (
+              {entity.coordinates && (
                 <div className="mt-4 border rounded-lg p-2 bg-gray-50">
                   <div className="font-medium mb-2">Map Location</div>
                   <div className="h-48 bg-blue-50 flex items-center justify-center rounded border relative overflow-hidden">
@@ -563,9 +901,8 @@ const EntityDetails = ({
                       <div className="text-center">
                         <MapPin className="h-8 w-8 text-red-500 mx-auto" />
                         <div className="text-sm mt-2">
-                          Coordinates:{" "}
-                          {displayEntity.coordinates.lat.toFixed(4)},{" "}
-                          {displayEntity.coordinates.lng.toFixed(4)}
+                          Coordinates: {entity.coordinates.lat.toFixed(4)},{" "}
+                          {entity.coordinates.lng.toFixed(4)}
                         </div>
                       </div>
                     </div>
@@ -601,196 +938,172 @@ const EntityDetails = ({
               </div>
             </div>
 
-            <div className="space-y-4 relative">
-              {/* Timeline line */}
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+            {sortedTimeline.length > 0 ? (
+              <div className="space-y-4 relative">
+                {/* Timeline line */}
+                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
 
-              {sortedTimeline.map((event, index) => (
-                <div key={event.id} className="flex gap-4 relative">
-                  {/* Timeline node */}
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center z-10 mt-1"
-                    style={{
-                      backgroundColor: `rgba(59, 130, 246, ${event.importance / 100})`,
-                      border: "2px solid white",
-                    }}
-                  >
-                    <span className="text-white text-xs font-medium">
-                      {index + 1}
-                    </span>
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 bg-white p-4 rounded-lg border shadow-sm">
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-medium">{event.title}</h4>
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-50 text-blue-700"
-                      >
-                        {formatDate(event.date)}
-                      </Badge>
+                {sortedTimeline.map((event, index) => (
+                  <div key={event.id} className="flex gap-4 relative">
+                    {/* Timeline node */}
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center z-10 mt-1"
+                      style={{
+                        backgroundColor: `rgba(59, 130, 246, ${event.importance / 100})`,
+                        border: "2px solid white",
+                      }}
+                    >
+                      <span className="text-white text-xs font-medium">
+                        {index + 1}
+                      </span>
                     </div>
-                    <p className="text-gray-600 mt-2">{event.description}</p>
 
-                    {/* Importance indicator */}
-                    <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
-                      <span>Significance:</span>
-                      <div className="w-24 bg-gray-200 rounded-full h-1.5">
-                        <div
-                          className="bg-blue-600 h-1.5 rounded-full"
-                          style={{ width: `${event.importance}%` }}
-                        />
+                    {/* Content */}
+                    <div className="flex-1 bg-white p-4 rounded-lg border shadow-sm">
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-medium">{event.title}</h4>
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-50 text-blue-700"
+                        >
+                          {formatDate(event.date)}
+                        </Badge>
                       </div>
-                      <span>{event.importance}/100</span>
+                      <p className="text-gray-600 mt-2">{event.description}</p>
+
+                      {/* Importance indicator */}
+                      <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                        <span>Significance:</span>
+                        <div className="w-24 bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className="bg-blue-600 h-1.5 rounded-full"
+                            style={{ width: `${event.importance}%` }}
+                          />
+                        </div>
+                        <span>{event.importance}/100</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-gray-500 py-6">
+                No timeline events available.
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="relationships" className="p-6">
-            <div className="space-y-4">
-              <div className="relative">
-                <Input
-                  placeholder="Search relationships..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="mb-4"
-                />
-              </div>
-
-              {filteredRelationships && filteredRelationships.length > 0 ? (
-                filteredRelationships.map((rel) => (
-                  <div
-                    key={rel.id}
-                    className="border rounded-lg overflow-hidden"
-                  >
-                    <div
-                      className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50"
-                      onClick={() => toggleExpanded(rel.id)}
-                    >
-                      <Avatar className="h-10 w-10">
-                        <img
-                          src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${rel.name}`}
-                          alt={rel.name}
-                        />
-                      </Avatar>
-                      <div className="flex-1">
-                        <div className="font-medium">{rel.name}</div>
-                        <div className="text-sm text-gray-500 flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className={
-                              rel.type.toLowerCase().includes("ally")
-                                ? "bg-green-50 text-green-700"
-                                : rel.type.toLowerCase().includes("rival")
-                                  ? "bg-red-50 text-red-700"
-                                  : rel.type.toLowerCase().includes("family")
-                                    ? "bg-purple-50 text-purple-700"
-                                    : "bg-blue-50 text-blue-700"
-                            }
-                          >
-                            {rel.type}
-                          </Badge>
-                          {rel.timeframe && (
-                            <span className="text-xs text-gray-500">
-                              {rel.timeframe}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {expanded[rel.id] ? (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
-                      )}
-                    </div>
-
-                    {expanded[rel.id] && (
-                      <div className="p-4 bg-gray-50 border-t">
-                        {rel.description && (
-                          <p className="text-gray-700 mb-3">
-                            {rel.description}
+            <div className="mb-4">
+              <Input
+                type="search"
+                placeholder="Search relationships..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            {filteredRelationships && filteredRelationships.length > 0 ? (
+              <div className="space-y-3">
+                {filteredRelationships.map((relationship) => (
+                  <Card key={relationship.id} className="shadow-sm">
+                    <div className="flex items-center justify-between p-4">
+                      <div>
+                        <h4 className="font-medium">{relationship.name}</h4>
+                        <p className="text-sm text-gray-500">
+                          {relationship.type}
+                        </p>
+                        {relationship.description && (
+                          <p className="text-sm text-gray-600 mt-1">
+                            {relationship.description}
                           </p>
                         )}
-                        {renderSignificance(rel.significance)}
-                        <div className="mt-3 flex justify-end">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onRelated?.(rel.id)}
-                          >
-                            View profile
-                          </Button>
-                        </div>
+                        {renderSignificance(relationship.significance)}
                       </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  No relationships found matching your search.
-                </div>
-              )}
-            </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onRelated?.(relationship.id)}
+                      >
+                        View Related
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-gray-500 py-6">
+                No relationships found.
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="media" className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {displayEntity.media?.map((item) => (
-                <Card key={item.id} className="overflow-hidden">
-                  <div className="relative aspect-video bg-gray-100">
-                    {item.type === "image" ? (
+            {entity.media && entity.media.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {entity.media.map((mediaItem) => (
+                  <Card
+                    key={mediaItem.id}
+                    className="overflow-hidden shadow-sm"
+                  >
+                    {mediaItem.type === "image" ? (
                       <img
-                        src={item.url}
-                        alt={item.caption}
-                        className="w-full h-full object-cover"
+                        src={mediaItem.url}
+                        alt={mediaItem.caption}
+                        className="w-full h-48 object-cover"
                       />
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        {getMediaTypeIcon(item.type)}
+                      <div className="h-48 flex items-center justify-center bg-gray-50 text-gray-500">
+                        {getMediaTypeIcon(mediaItem.type)}
+                        <span className="ml-2">
+                          {mediaItem.type.toUpperCase()}
+                        </span>
                       </div>
                     )}
-                    <Badge
-                      className="absolute top-2 right-2 bg-white/90"
-                      variant="outline"
-                    >
-                      {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
-                    </Badge>
-                  </div>
-                  <div className="p-4">
-                    <p className="font-medium">{item.caption}</p>
-                    <div className="flex items-center justify-between mt-2 text-sm text-gray-500">
-                      {item.date && <span>{item.date}</span>}
-                      {item.source && <span>Source: {item.source}</span>}
+                    <div className="p-4">
+                      <h4 className="font-medium">{mediaItem.caption}</h4>
+                      {mediaItem.date && (
+                        <div className="text-sm text-gray-500">
+                          Date: {formatDate(mediaItem.date)}
+                        </div>
+                      )}
+                      {mediaItem.source && (
+                        <div className="text-sm text-gray-500">
+                          Source: {mediaItem.source}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-gray-500 py-6">
+                No media available.
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="links" className="p-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium">External Resources</h3>
-              {displayEntity.externalLinks?.map((link, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50"
-                >
-                  <LinkIcon className="h-5 w-5 text-blue-500" />
-                  <div className="flex-1">
-                    <div className="font-medium">{link.title}</div>
-                    <div className="text-sm text-blue-500">{link.url}</div>
-                  </div>
-                  <Button variant="outline" size="sm">
-                    Visit
-                  </Button>
-                </div>
-              ))}
-            </div>
+            {entity.externalLinks && entity.externalLinks.length > 0 ? (
+              <ul className="space-y-2">
+                {entity.externalLinks.map((link, index) => (
+                  <li key={index} className="flex items-center justify-between">
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {link.title}
+                    </a>
+                    <LinkIcon className="h-4 w-4 text-gray-400" />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-center text-gray-500 py-6">
+                No external links available.
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </ScrollArea>

@@ -1,39 +1,41 @@
-export class Node {
-  constructor(props) {
-    this.id = props.id;
-    this.type = props.type;
-    this.label = props.label;
-    this.x = props.x;
-    this.y = props.y;
-    this.description = props.description;
-    this.image = props.image;
-    this.date = props.date;
-    this.isNew = props.isNew;
-    this.isEditing = props.isEditing;
-  }
+export interface Node {
+  id: string;
+  type: "person" | "event" | "place" | "document" | "concept";
+  label: string;
+  x?: number;
+  y?: number;
+  fx?: number; // Fixed x position for stability
+  fy?: number; // Fixed y position for stability
+  description?: string;
+  image?: string;
+  date?: string;
+  isNew?: boolean;
+  isEditing?: boolean;
 }
 
-export class Edge {
-  constructor(props) {
-    this.id = props.id;
-    this.source = props.source;
-    this.target = props.target;
-    this.relationship = props.relationship;
-    this.isNew = props.isNew;
-    this.isEditing = props.isEditing;
-  }
+export interface Edge {
+  id: string;
+  source: string;
+  target: string;
+  relationship?: string;
+  isNew?: boolean;
+  isEditing?: boolean;
 }
 
-export class KnowledgeGraphProps {
-  constructor(props) {
-    this.nodes = props.nodes || [];
-    this.edges = props.edges || [];
-    this.onNodeSelect = props.onNodeSelect;
-    this.onNodeCreate = props.onNodeCreate;
-    this.onNodeUpdate = props.onNodeUpdate;
-    this.onNodeDelete = props.onNodeDelete;
-    this.onEdgeCreate = props.onEdgeCreate;
-    this.onEdgeUpdate = props.onEdgeUpdate;
-    this.onEdgeDelete = props.onEdgeDelete;
-  }
+export interface MidEdgePoint {
+  x: number;
+  y: number;
+  edge: Edge;
+}
+
+export interface KnowledgeGraphProps {
+  nodes?: Node[];
+  edges?: Edge[];
+  onNodeSelect?: (nodeId: string) => void;
+  onNodeCreate?: (node: Node) => void;
+  onNodeUpdate?: (node: Node) => void;
+  onNodeDelete?: (nodeId: string) => void;
+  onEdgeCreate?: (edge: Edge) => void;
+  onEdgeUpdate?: (edge: Edge) => void;
+  onEdgeDelete?: (edgeId: string) => void;
 }

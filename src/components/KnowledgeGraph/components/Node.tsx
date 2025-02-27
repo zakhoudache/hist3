@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Node } from "../types"; // Adjust this path to where your Node interface is defined
+import type { Node as NodeType } from "../types"; // Import as a type to avoid naming conflict
 
 interface NodeComponentProps {
-  node: Node;
+  node: NodeType;
   isSelected: boolean;
   onNodeClick: (nodeId: string) => void;
   onNodeDragStart: (nodeId: string, event: React.MouseEvent) => void;

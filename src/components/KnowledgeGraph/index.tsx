@@ -1,3 +1,3 @@
-import KnowledgeGraph from "./KnowledgeGraph";
+import KnowledgeGraph from "./RefactoredKnowledgeGraph";
 
 export default KnowledgeGraph;

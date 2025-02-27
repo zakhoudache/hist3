@@ -123,6 +123,8 @@ export interface TextEditorProps {
   initialContent?: string;
   onContentChange?: (content: string) => void;
   onEntityDetected?: (entity: Entity) => void;
+  onNodesChange?: (nodes: Node[]) => void;
+  onEdgesChange?: (edges: Edge[]) => void;
   mode?: "standard" | "research" | "teaching" | "collaborative";
   readOnly?: boolean;
   maxLength?: number;
@@ -134,6 +136,8 @@ const TextEditor: React.FC<TextEditorProps> = ({
   initialContent = "",
   onContentChange,
   onEntityDetected,
+  onNodesChange,
+  onEdgesChange,
   mode = "standard",
   readOnly = false,
   maxLength,
@@ -243,6 +247,19 @@ const TextEditor: React.FC<TextEditorProps> = ({
     }
   };
 
+  // Update parent components when nodes or edges change
+  useEffect(() => {
+    if (onNodesChange && nodeList.length > 0) {
+      onNodesChange(nodeList);
+    }
+  }, [nodeList, onNodesChange]);
+
+  useEffect(() => {
+    if (onEdgesChange && edgeList.length > 0) {
+      onEdgesChange(edgeList);
+    }
+  }, [edgeList, onEdgesChange]);
+
   // Text analysis handler
   const handleAnalyze = useCallback(async () => {
     if (!text.trim()) return;
@@ -250,52 +267,22 @@ const TextEditor: React.FC<TextEditorProps> = ({
     setLoading(true);
 
     try {
-      // Call Supabase Edge Function for AI analysis
-      const { data, error } = await supabase.functions.invoke("analyze-text", {
-        body: { text },
-      });
+      // Import the entity extraction service
+      const { analyzeText } = await import("@/services/entityExtraction");
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      // Analyze the text
+      const result = await analyzeText(text);
 
-      if (!data) {
-        throw new Error("No data returned from analysis");
-      }
-
-      // Process entities from the API response
-      const extractedEntities: Entity[] = data.entities.map((entity: any) => ({
-        id: entity.id,
-        text: entity.text,
-        type: entity.type,
-        confidence: entity.confidence || 0.9,
-        offsets: entity.offsets || [
-          {
-            start: text.indexOf(entity.text),
-            end: text.indexOf(entity.text) + entity.text.length,
-          },
-        ],
-        metadata: entity.metadata || {
-          description: `Description of ${entity.text}`,
-          importance: Math.random() * 10,
-          dates: {},
-          category: "general",
-        },
-      }));
-
-      setEntities(extractedEntities);
+      // Update state with the analysis results
+      setEntities(result.entities);
+      setInsights(result.insights);
+      setNodeList(result.nodes);
+      setEdgeList(result.edges);
 
       // Notify parent component about detected entities
       if (onEntityDetected) {
-        extractedEntities.forEach((entity) => onEntityDetected(entity));
+        result.entities.forEach((entity) => onEntityDetected(entity));
       }
-
-      // Process insights
-      setInsights(data.insights || []);
-
-      // Process nodes and edges for the knowledge graph
-      setNodeList(data.nodes || []);
-      setEdgeList(data.edges || []);
 
       // Create new snapshot
       const newSnapshot: TextSnapshot = {
@@ -310,107 +297,10 @@ const TextEditor: React.FC<TextEditorProps> = ({
       setUnsavedChanges(false);
     } catch (err) {
       console.error("Analysis error:", err);
-      // Fallback to mock data for development
-      const mockEntities: Entity[] = [
-        {
-          id: "1",
-          text: text.split(" ").slice(0, 2).join(" "),
-          type: "person",
-          confidence: 0.94,
-          offsets: [
-            { start: 0, end: text.split(" ").slice(0, 2).join(" ").length },
-          ],
-          metadata: {
-            description: "A historical figure",
-            importance: 8,
-            dates: { start: "1750", end: "1800" },
-            category: "historical",
-          },
-        },
-        {
-          id: "2",
-          text: text.split(" ").slice(3, 5).join(" "),
-          type: "place",
-          confidence: 0.87,
-          offsets: [
-            {
-              start: text.indexOf(text.split(" ").slice(3, 5).join(" ")),
-              end:
-                text.indexOf(text.split(" ").slice(3, 5).join(" ")) +
-                text.split(" ").slice(3, 5).join(" ").length,
-            },
-          ],
-          metadata: {
-            description: "A location",
-            importance: 6,
-            category: "geography",
-          },
-        },
-      ];
-
-      setEntities(mockEntities);
-
-      // Create mock nodes and edges for development
-      const mockNodes: Node[] = mockEntities.map((entity) => ({
-        id: entity.id,
-        type: entity.type,
-        label: entity.text,
-        description: entity.metadata?.description,
-      }));
-
-      const mockEdges: Edge[] = [];
-      if (mockNodes.length >= 2) {
-        mockEdges.push({
-          id: "edge1",
-          source: mockNodes[0].id,
-          target: mockNodes[1].id,
-          relationship: "associated with",
-        });
-      }
-
-      setNodeList(mockNodes);
-      setEdgeList(mockEdges);
-
-      const mockInsights: TextInsight[] = [
-        {
-          type: "readability",
-          score: 75,
-          summary: "Highly readable text",
-          details:
-            "The text has a Flesch-Kincaid grade level of approximately 8th grade.",
-        },
-        {
-          type: "sentiment",
-          score: 60,
-          summary: "Slightly positive sentiment",
-          details:
-            "The text has a generally positive tone with some neutral elements.",
-        },
-        {
-          type: "complexity",
-          score: 40,
-          summary: "Low to moderate complexity",
-          details: "The text uses straightforward language and structure.",
-        },
-        {
-          type: "historical_accuracy",
-          score: 85,
-          summary: "Good historical accuracy",
-          details: "The historical elements in the text appear to be accurate.",
-        },
-        {
-          type: "bias",
-          score: 20,
-          summary: "Low bias detected",
-          details: "The text presents a relatively balanced perspective.",
-        },
-      ];
-
-      setInsights(mockInsights);
     } finally {
       setLoading(false);
     }
-  }, [text, wordCount, onEntityDetected, supabase]);
+  }, [text, wordCount, onEntityDetected]);
 
   // Search functionality
   const handleSearch = () => {
@@ -606,14 +496,24 @@ const TextEditor: React.FC<TextEditorProps> = ({
 
   // Get highlighted text with entities
   const getHighlightedText = () => {
-    if (!highlightEntities || entities.length === 0) {
+    if (!highlightEntities || !entities || entities.length === 0) {
       return `<div class="prose">${text.replace(/\n/g, "<br/>")}</div>`;
     }
 
     let htmlText = text;
-    const sortedEntities = [...entities].sort((a, b) => {
-      // Sort by starting offset (descending) to replace from the end
-      return (b.offsets[0]?.start || 0) - (a.offsets[0]?.start || 0);
+    // Create a safe copy of entities and ensure all have valid offsets
+    const entitiesWithOffsets = entities.filter(
+      (entity) =>
+        entity &&
+        entity.offsets &&
+        entity.offsets.length > 0 &&
+        entity.offsets[0] &&
+        typeof entity.offsets[0].start === "number",
+    );
+
+    // Sort entities by starting offset (descending) to replace from the end
+    const sortedEntities = [...entitiesWithOffsets].sort((a, b) => {
+      return (b.offsets[0].start || 0) - (a.offsets[0].start || 0);
     });
 
     const colorMap: Record<EntityType, string> = {
@@ -628,10 +528,22 @@ const TextEditor: React.FC<TextEditorProps> = ({
     };
 
     sortedEntities.forEach((entity) => {
+      if (!entity.offsets || entity.offsets.length === 0) return;
+
       entity.offsets.forEach((offset) => {
+        if (
+          !offset ||
+          typeof offset.start !== "number" ||
+          typeof offset.end !== "number"
+        )
+          return;
+
         const { start, end } = offset;
+        if (start < 0 || end > htmlText.length || start >= end) return;
+
         const entityText = htmlText.substring(start, end);
-        const highlightedEntity = `<span class="entity-highlight" style="background-color: ${colorMap[entity.type]};" title="${entity.type}: ${entity.metadata?.description || ""}">${entityText}</span>`;
+        const entityType = entity.type || "other";
+        const highlightedEntity = `<span class="entity-highlight" style="background-color: ${colorMap[entityType] || "#d3d3d3"};" title="${entityType}: ${entity.metadata?.description || ""}">${entityText}</span>`;
         htmlText =
           htmlText.substring(0, start) +
           highlightedEntity +
@@ -673,6 +585,11 @@ const TextEditor: React.FC<TextEditorProps> = ({
     setGraphLoading(true);
 
     try {
+      // Check if supabase client is available
+      if (!supabase || !supabase.functions) {
+        throw new Error("Supabase client not available");
+      }
+
       // Call Supabase Edge Function to generate knowledge graph
       const { data, error } = await supabase.functions.invoke(
         "generateKnowledgeGraph",
@@ -692,11 +609,17 @@ const TextEditor: React.FC<TextEditorProps> = ({
     } catch (err) {
       console.error("Knowledge graph generation error:", err);
       // Fallback to mock data
-      const mockNodes: Node[] = entities.map((entity, index) => ({
-        id: entity.id,
-        type: entity.type,
-        label: entity.text,
-        description: entity.metadata?.description,
+      const safeEntities = entities || [];
+      const mockNodes: Node[] = safeEntities.map((entity, index) => ({
+        id: entity.id || `entity-${index}`,
+        type: entity.type || "concept",
+        label: entity.text || `Entity ${index}`,
+        description: entity.metadata?.description || "",
+        // Add fixed positions for stability
+        x: 200 + index * 50,
+        y: 200 + index * 30,
+        fx: 200 + index * 50,
+        fy: 200 + index * 30,
       }));
 
       const mockEdges: Edge[] = [];
