@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as d3 from "d3";
-import { Node, Edge } from "../types";
+import type { Node, Edge } from "../types";
 import { getNodeShape } from "../utils/nodeShapes";
 
 interface GraphRendererProps {
