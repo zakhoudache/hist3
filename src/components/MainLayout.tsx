@@ -5,7 +5,6 @@ import {
   ResizablePanelGroup,
 } from "./ui/resizable";
 import TextEditor from "./TextEditor";
-import KnowledgeGraph from "./KnowledgeGraph/RefactoredKnowledgeGraph";
 import EntityDetails from "./EntityDetails";
 import { Node, Edge } from "./KnowledgeGraph/types";
 import { Entity } from "@/services/entityExtraction";
@@ -16,7 +15,7 @@ interface MainLayoutProps {
 }
 
 const MainLayout = ({
-  defaultLayout = [30, 40, 30],
+  defaultLayout = [40, 60],
   onLayoutChange = () => {},
 }: MainLayoutProps) => {
   // Shared state for knowledge graph data
@@ -52,7 +51,7 @@ const MainLayout = ({
         onLayout={onLayoutChange}
         className="h-full w-full rounded-lg border"
       >
-        <ResizablePanel defaultSize={defaultLayout[0]} minSize={20}>
+        <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
           <TextEditor
             onEntityDetected={handleEntityDetected}
             onContentChange={(content) => {
@@ -61,22 +60,13 @@ const MainLayout = ({
             }}
             onNodesChange={setNodes}
             onEdgesChange={setEdges}
-          />
-        </ResizablePanel>
-
-        <ResizableHandle />
-
-        <ResizablePanel defaultSize={defaultLayout[1]} minSize={30}>
-          <KnowledgeGraph
-            nodes={nodes}
-            edges={edges}
             onNodeSelect={handleNodeSelect}
           />
         </ResizablePanel>
 
         <ResizableHandle />
 
-        <ResizablePanel defaultSize={defaultLayout[2]} minSize={20}>
+        <ResizablePanel defaultSize={defaultLayout[1]} minSize={30}>
           <EntityDetails
             entityId={selectedEntityId}
             entityName={selectedEntityName}

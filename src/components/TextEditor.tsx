@@ -131,6 +131,7 @@ export interface TextEditorProps {
   onEntityDetected?: (entity: Entity) => void;
   onNodesChange?: (nodes: Node[]) => void;
   onEdgesChange?: (edges: Edge[]) => void;
+  onNodeSelect?: (nodeId: string) => void;
   mode?: "standard" | "research" | "teaching" | "collaborative";
   readOnly?: boolean;
   maxLength?: number;
@@ -144,6 +145,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
   onEntityDetected,
   onNodesChange,
   onEdgesChange,
+  onNodeSelect,
   mode = "standard",
   readOnly = false,
   maxLength,
@@ -1179,7 +1181,11 @@ const TextEditor: React.FC<TextEditorProps> = ({
           <Card>
             <div className="h-[70vh] flex items-center justify-center bg-gray-50">
               {nodeList.length > 0 ? (
-                <KnowledgeGraph nodes={nodeList} edges={edgeList} />
+                <KnowledgeGraph
+                  nodes={nodeList}
+                  edges={edgeList}
+                  onNodeSelect={onNodeSelect || (() => {})}
+                />
               ) : (
                 <div className="text-center py-10 text-gray-500">
                   {graphLoading ? (

@@ -150,4 +150,4 @@ export const NodeComponent: React.FC<NodeComponentProps> = ({
   );
 };
 
-export default Node;
+export default NodeComponent;

@@ -450,8 +450,8 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
       })
       .on("click", (event, d) => {
         // Calculate middle point of the edge
-        const source = processedNodeList.find((n) => n.id === d.source);
-        const target = processedNodeList.find((n) => n.id === d.target);
+        const source = nodeList.find((n) => n.id === d.source);
+        const target = nodeList.find((n) => n.id === d.target);
 
         if (
           source &&
