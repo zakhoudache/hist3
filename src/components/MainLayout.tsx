@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -9,6 +9,9 @@ import EntityDetails from "./EntityDetails";
 import { Node, Edge } from "./KnowledgeGraph/types";
 import { Entity } from "@/services/entityExtraction";
 import ParametricVisualization from "./Infografic";
+import TopToolbar from "./TopToolbar";
+
+import KnowledgeGraph from "./KnowledgeGraph/RefactoredKnowledgeGraph";
 
 // interface MainLayoutProps {
 //   defaultLayout?: number[];
