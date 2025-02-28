@@ -8,7 +8,6 @@ import EdgeDialog from "./components/EdgeDialog";
 import ConfirmDeleteDialog from "./components/ConfirmDeleteDialog";
 import EdgeCreationIndicator from "./components/EdgeCreationIndicator";
 import { Node, Edge } from "./types";
-import { exportGraphToPDF } from "@/utils/pdfExport";
 
 interface KnowledgeGraphProps {
   nodes?: Node[];
@@ -98,8 +97,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onResetZoom={handleResetZoom}
-        nodes={nodeList}
-        edges={edgeList}
         onAddNode={() => {
           const newNode: Node = {
             id: `node-${Date.now()}`,

@@ -427,23 +427,16 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
       .join("path")
       .attr("class", "edge-hitbox")
       .attr("stroke", "transparent")
-      .attr("stroke-width", 25) // Much wider hit area for easier selection
+      .attr("stroke-width", 15)
       .attr("fill", "none")
       .style("cursor", "pointer")
       .on("mouseenter", (event, d) => {
         setHoveredEdge(d.id);
 
-        // Get source and target node names for better context
-        const sourceName =
-          nodeList.find((n) => n.id === d.source)?.label || "Unknown";
-        const targetName =
-          nodeList.find((n) => n.id === d.target)?.label || "Unknown";
-
         // Show tooltip with edge information
         tooltip.style("visibility", "visible").html(`
             <div class="font-medium">Relationship: ${d.relationship || "Undefined"}</div>
-            <div class="text-sm text-gray-600">${sourceName} → ${targetName}</div>
-            <div class="text-xs text-blue-600 mt-1">Click to edit or add node</div>
+            <div class="text-sm text-gray-600">Click to edit</div>
           `);
       })
       .on("mousemove", (event) => {
@@ -496,11 +489,11 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
     // Add node shapes with improved hit area
     // First add a larger transparent hit area
     nodeGroups
-      .append("circle") // Use circle for better hit detection
-      .attr("r", 30) // Large hit area
+      .append("path")
+      .attr("d", (d) => getNodeShape(d.type))
       .attr("fill", "transparent")
       .attr("stroke", "transparent")
-      .attr("stroke-width", 15) // Even wider hit area
+      .attr("stroke-width", 10) // Wider hit area
       .style("cursor", "pointer")
       .on("mouseenter", (event, d) => {
         setHoveredNode(d.id);
@@ -510,7 +503,6 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
             <div class="font-medium">${d.label}</div>
             <div class="text-sm text-gray-600">Type: ${d.type}</div>
             ${d.description ? `<div class="text-sm mt-1">${d.description}</div>` : ""}
-            <div class="text-xs text-blue-600 mt-1">Click to edit • Right-click to focus • Drag to move</div>
           `);
       })
       .on("mousemove", (event) => {
@@ -675,36 +667,18 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
       .attr("pointer-events", "none")
       .text("🗑️");
 
-    // Create new edge button (larger and more visible)
+    // Create new edge button
     actionButtons
       .append("circle")
       .attr("cx", 0)
       .attr("cy", 0)
-      .attr("r", 12) // Larger button
+      .attr("r", 10)
       .attr("fill", "#22c55e")
-      .attr("stroke", "white")
-      .attr("stroke-width", 1.5)
       .attr("cursor", "pointer")
       .on("click", (event, d) => {
         event.stopPropagation();
         // Start edge creation mode
         setEdgeCreationState({ source: d.id, target: null });
-
-        // Show a toast or notification
-        tooltip
-          .style("visibility", "visible")
-          .style("top", event.pageY - 50 + "px")
-          .style("left", event.pageX + "px").html(`
-            <div class="bg-green-100 p-2 rounded-md border border-green-500">
-              <div class="font-medium text-green-800">Connection mode activated</div>
-              <div class="text-sm text-green-700">Click on another node to connect</div>
-            </div>
-          `);
-
-        // Hide the tooltip after 3 seconds
-        setTimeout(() => {
-          tooltip.style("visibility", "hidden");
-        }, 3000);
       });
 
     actionButtons
@@ -717,7 +691,7 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
       .attr("pointer-events", "none")
       .text("🔗");
 
-    // Show enhanced indicator when in edge creation mode
+    // Show indicator when in edge creation mode
     if (edgeCreationState.source) {
       const sourceNode = processedNodeList.find(
         (n) => n.id === edgeCreationState.source,
@@ -727,9 +701,7 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
         sourceNode.x !== undefined &&
         sourceNode.y !== undefined
       ) {
-        // Pulsating circle around source node
-        const pulseCircle = g
-          .append("circle")
+        g.append("circle")
           .attr("cx", sourceNode.x)
           .attr("cy", sourceNode.y)
           .attr("r", 40)
@@ -738,60 +710,13 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
           .attr("stroke-width", 2)
           .attr("stroke-dasharray", "5,5");
 
-        // Add pulsating animation
-        function pulseAnimation() {
-          pulseCircle
-            .transition()
-            .duration(1000)
-            .attr("r", 50)
-            .attr("stroke-opacity", 0.3)
-            .transition()
-            .duration(1000)
-            .attr("r", 40)
-            .attr("stroke-opacity", 1)
-            .on("end", pulseAnimation);
-        }
-
-        pulseAnimation();
-
-        // Add a line that follows the mouse to show potential connection
-        const mouseTracker = g
-          .append("line")
-          .attr("x1", sourceNode.x)
-          .attr("y1", sourceNode.y)
-          .attr("x2", sourceNode.x)
-          .attr("y2", sourceNode.y)
-          .attr("stroke", "#22c55e")
-          .attr("stroke-width", 2)
-          .attr("stroke-dasharray", "5,5");
-
-        // Update line position on mouse move
-        svg.on("mousemove", (event) => {
-          const [x, y] = d3.pointer(event, svg.node());
-          mouseTracker.attr("x2", x).attr("y2", y);
-        });
-
-        // Prominent text instruction
         g.append("text")
           .attr("x", sourceNode.x)
           .attr("y", sourceNode.y - 45)
           .attr("text-anchor", "middle")
-          .attr("font-size", "14px")
-          .attr("font-weight", "bold")
+          .attr("font-size", "12px")
           .attr("fill", "#22c55e")
           .text("Select target node to connect");
-
-        // Add background to text for better visibility
-        g.append("rect")
-          .attr("x", sourceNode.x - 120)
-          .attr("y", sourceNode.y - 60)
-          .attr("width", 240)
-          .attr("height", 25)
-          .attr("fill", "white")
-          .attr("fill-opacity", 0.8)
-          .attr("rx", 5)
-          .attr("ry", 5)
-          .lower(); // Move to back
       }
     }
 

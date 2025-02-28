@@ -136,128 +136,56 @@ export function generateGraphFromEntities(
 }
 
 /**
- * Determines if two entities are related based on their proximity in text and semantic relationship
+ * Determines if two entities are related based on their proximity in text
  */
 function areEntitiesRelated(
   entity1: Entity,
   entity2: Entity,
   text: string,
 ): boolean {
-  // Don't create self-relationships
-  if (entity1.id === entity2.id) return false;
-
-  // Check if entities appear in the same sentence
-  const sentences = text.split(/[.!?]+/);
-  let inSameSentence = false;
-
-  for (const sentence of sentences) {
-    if (sentence.includes(entity1.text) && sentence.includes(entity2.text)) {
-      inSameSentence = true;
-      break;
-    }
-  }
-
-  // Check proximity if they have offset information
+  // Simple heuristic: entities are related if they appear within 100 characters of each other
   if (
     entity1.offsets &&
     entity2.offsets &&
     entity1.offsets.length > 0 &&
     entity2.offsets.length > 0
   ) {
-    // Check all possible offset combinations to find the closest occurrence
-    let minDistance = Number.MAX_SAFE_INTEGER;
+    const offset1 = entity1.offsets[0];
+    const offset2 = entity2.offsets[0];
 
-    for (const offset1 of entity1.offsets) {
-      for (const offset2 of entity2.offsets) {
-        if (!offset1 || !offset2) continue;
+    const distance = Math.min(
+      Math.abs(offset1.end - offset2.start),
+      Math.abs(offset2.end - offset1.start),
+    );
 
-        const distance = Math.min(
-          Math.abs(offset1.end - offset2.start),
-          Math.abs(offset2.end - offset1.start),
-        );
-
-        minDistance = Math.min(minDistance, distance);
-      }
-    }
-
-    // Entities are related if they are very close to each other (within 150 characters)
-    // or if they appear in the same sentence and are moderately close (within 300 characters)
-    return minDistance < 150 || (inSameSentence && minDistance < 300);
+    return distance < 100;
   }
 
-  // If we don't have offset information, use the same sentence heuristic
-  return inSameSentence;
+  // If we don't have offset information, assume they're related
+  // This is a fallback for development/testing
+  return true;
 }
 
 /**
- * Determines the relationship type between two entities with improved semantic understanding
+ * Determines the relationship type between two entities
  */
 function determineRelationship(
   entity1: Entity,
   entity2: Entity,
   text: string,
 ): string {
-  // Find sentences containing both entities to analyze their relationship
-  const sentences = text.split(/[.!?]+/);
-  const sharedSentences = sentences.filter(
-    (sentence) =>
-      sentence.includes(entity1.text) && sentence.includes(entity2.text),
-  );
+  // This is a simplified approach - in a real implementation, you would use
+  // NLP or the AI model to determine the actual relationship
 
-  // Look for relationship verbs in shared sentences
-  const relationshipVerbs = {
-    person_event: ["attended", "participated", "organized", "led", "witnessed"],
-    event_person: ["included", "involved", "featured", "affected"],
-    person_place: [
-      "visited",
-      "traveled to",
-      "lived in",
-      "moved to",
-      "explored",
-    ],
-    place_person: ["hosted", "welcomed", "was home to", "sheltered"],
-    person_document: ["wrote", "authored", "published", "created", "signed"],
-    document_person: ["was written by", "mentions", "describes", "references"],
-    person_person: [
-      "met",
-      "married",
-      "fought",
-      "supported",
-      "opposed",
-      "advised",
-    ],
-    place_place: ["borders", "is near", "is part of", "contains"],
-    event_event: [
-      "preceded",
-      "followed",
-      "caused",
-      "influenced",
-      "coincided with",
-    ],
-    document_document: ["references", "builds on", "contradicts", "supports"],
-    concept_concept: ["relates to", "is part of", "includes", "contrasts with"],
-    generic: ["is related to", "is connected to", "is associated with"],
-  };
+  const relationshipTypes = [
+    "connected to",
+    "related to",
+    "associated with",
+    "mentioned with",
+    "appears with",
+  ];
 
-  // Determine the relationship key based on entity types
-  let relationshipKey = `${entity1.type}_${entity2.type}`;
-  if (!relationshipVerbs[relationshipKey as keyof typeof relationshipVerbs]) {
-    relationshipKey = "generic";
-  }
-
-  // Check for specific relationship verbs in the shared sentences
-  const verbs =
-    relationshipVerbs[relationshipKey as keyof typeof relationshipVerbs];
-
-  for (const sentence of sharedSentences) {
-    for (const verb of verbs) {
-      if (sentence.toLowerCase().includes(verb)) {
-        return verb;
-      }
-    }
-  }
-
-  // For specific entity type combinations, use more specific default relationships
+  // For specific entity type combinations, use more specific relationships
   if (entity1.type === "person" && entity2.type === "event") {
     return "participated in";
   } else if (entity1.type === "event" && entity2.type === "person") {
@@ -270,18 +198,12 @@ function determineRelationship(
     return "authored";
   } else if (entity1.type === "document" && entity2.type === "person") {
     return "written by";
-  } else if (entity1.type === "person" && entity2.type === "person") {
-    return "connected to";
-  } else if (entity1.type === "event" && entity2.type === "event") {
-    return "related to";
-  } else if (entity1.type === "place" && entity2.type === "place") {
-    return "near";
-  } else if (entity1.type === "concept" && entity2.type === "concept") {
-    return "related to";
   }
 
-  // Default to a generic relationship
-  return "connected to";
+  // Default to a random generic relationship
+  return relationshipTypes[
+    Math.floor(Math.random() * relationshipTypes.length)
+  ];
 }
 
 /**
