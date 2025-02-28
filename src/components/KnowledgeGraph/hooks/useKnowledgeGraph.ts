@@ -147,7 +147,7 @@ export const useKnowledgeGraph = (
     onEdgeDelete,
   ]);
 
-  // Create node from edge
+  // Create node from edge with improved relationship inference
   const createNodeFromEdge = useCallback(
     (relationship: string) => {
       if (!midEdgePoint) return;
@@ -161,12 +161,54 @@ export const useKnowledgeGraph = (
 
       if (!sourceNode || !targetNode) return;
 
+      // Determine the most appropriate node type based on the relationship
+      let nodeType: "person" | "event" | "place" | "document" | "concept" =
+        "event";
+      let nodeLabel = `Event between ${sourceNode.label} and ${targetNode.label}`;
+
+      // Infer node type and label from relationship
+      if (relationship) {
+        const relationshipLower = relationship.toLowerCase();
+
+        if (
+          relationshipLower.includes("wrote") ||
+          relationshipLower.includes("authored") ||
+          relationshipLower.includes("published") ||
+          relationshipLower.includes("created")
+        ) {
+          nodeType = "document";
+          nodeLabel = `Document by ${sourceNode.label}`;
+        } else if (
+          relationshipLower.includes("visited") ||
+          relationshipLower.includes("located") ||
+          relationshipLower.includes("traveled")
+        ) {
+          nodeType = "place";
+          nodeLabel = `Place visited by ${sourceNode.label}`;
+        } else if (
+          relationshipLower.includes("met") ||
+          relationshipLower.includes("married") ||
+          relationshipLower.includes("related") ||
+          relationshipLower.includes("child")
+        ) {
+          nodeType = "person";
+          nodeLabel = `Person related to ${sourceNode.label}`;
+        } else if (
+          relationshipLower.includes("concept") ||
+          relationshipLower.includes("idea") ||
+          relationshipLower.includes("theory")
+        ) {
+          nodeType = "concept";
+          nodeLabel = `Concept related to ${sourceNode.label}`;
+        }
+      }
+
       const newNodeId = `node-${Date.now()}`;
       const newNode: Node = {
         id: newNodeId,
-        type: "event",
-        label: `Event between ${sourceNode.label} and ${targetNode.label}`,
-        description: "",
+        type: nodeType,
+        label: nodeLabel,
+        description: `Created from relationship "${relationship}" between ${sourceNode.label} and ${targetNode.label}`,
         x: midEdgePoint.x,
         y: midEdgePoint.y,
         fx: midEdgePoint.x, // Add fixed position for stability
@@ -175,18 +217,34 @@ export const useKnowledgeGraph = (
         isEditing: true,
       };
 
+      // Create more meaningful relationships for the new edges
+      let sourceToNewRelationship = relationship || "Related to";
+      let newToTargetRelationship = relationship || "Related to";
+
+      // Try to infer directional relationships
+      if (sourceNode.type === "person" && nodeType === "document") {
+        sourceToNewRelationship = "authored";
+        newToTargetRelationship = "references";
+      } else if (sourceNode.type === "person" && nodeType === "place") {
+        sourceToNewRelationship = "visited";
+        newToTargetRelationship = "connected to";
+      } else if (sourceNode.type === "event" && nodeType === "person") {
+        sourceToNewRelationship = "involved";
+        newToTargetRelationship = "participated in";
+      }
+
       const edge1: Edge = {
         id: `edge-${Date.now()}`,
         source: midEdgePoint.edge.source,
         target: newNodeId,
-        relationship: relationship || "Related to",
+        relationship: sourceToNewRelationship,
       };
 
       const edge2: Edge = {
         id: `edge-${Date.now() + 1}`,
         source: newNodeId,
         target: midEdgePoint.edge.target,
-        relationship: relationship || "Related to",
+        relationship: newToTargetRelationship,
       };
 
       const filteredEdges = edgeList.filter(
@@ -233,9 +291,10 @@ export const useKnowledgeGraph = (
     [],
   );
 
-  // Create new edge
+  // Create new edge with intelligent relationship suggestion
   const createNewEdge = useCallback(
     (sourceId: string, targetId: string) => {
+      // Check if edge already exists
       const edgeExists = edgeList.some(
         (e) =>
           (e.source === sourceId && e.target === targetId) ||
@@ -247,11 +306,51 @@ export const useKnowledgeGraph = (
         return;
       }
 
+      // Get source and target nodes
+      const sourceNode = nodeList.find((n) => n.id === sourceId);
+      const targetNode = nodeList.find((n) => n.id === targetId);
+
+      if (!sourceNode || !targetNode) {
+        setEdgeCreationState({ source: null, target: null });
+        return;
+      }
+
+      // Suggest relationship based on node types
+      let suggestedRelationship = "";
+
+      // Define relationship suggestions based on node type combinations
+      const relationshipSuggestions: Record<string, string> = {
+        person_person: "connected to",
+        person_event: "participated in",
+        event_person: "involved",
+        person_place: "visited",
+        place_person: "visited by",
+        person_document: "authored",
+        document_person: "written by",
+        event_event: "related to",
+        event_place: "occurred at",
+        place_event: "hosted",
+        document_document: "references",
+        concept_concept: "related to",
+        concept_person: "developed by",
+        person_concept: "developed",
+        concept_event: "manifested in",
+        event_concept: "exemplified",
+        place_place: "near",
+        document_event: "describes",
+        event_document: "documented in",
+      };
+
+      // Get the relationship key
+      const relationshipKey = `${sourceNode.type}_${targetNode.type}`;
+      suggestedRelationship =
+        relationshipSuggestions[relationshipKey] || "connected to";
+
       const newEdge: Edge = {
         id: `edge-${Date.now()}`,
         source: sourceId,
         target: targetId,
-        relationship: "",
+        relationship: suggestedRelationship,
         isNew: true,
         isEditing: true,
       };
@@ -259,7 +358,7 @@ export const useKnowledgeGraph = (
       setActiveEdge(newEdge);
       setShowEdgeDialog(true);
     },
-    [edgeList],
+    [edgeList, nodeList],
   );
 
   // Cancel edge creation
