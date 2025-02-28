@@ -977,10 +977,16 @@ const GraphRenderer: React.FC<GraphRendererProps> = ({
       });
 
       // Update edge hitbox paths to match
-      g.selectAll(".edge-hitbox").attr("d", function () {
-        const correspondingEdge = d3.select(this.parentNode).select(".link");
-        return correspondingEdge.attr("d");
+      g.selectAll(".edge-hitbox").attr("d", function (d) {
+        // The issue is here - we're trying to find the corresponding edge, but the selector is incorrect
+        // Current problematic code:
+        // const correspondingEdge = d3.select(this.parentNode).select(".link");
+
+        // Fixed version - using the edge ID to find the corresponding path element
+        const correspondingPath = g.select(`#edge-${d.id}`);
+        return correspondingPath.attr("d") || "";
       });
+      // Update edge hitbox paths to match
 
       // Update node positions
       nodeGroups.attr("transform", (d) => {
