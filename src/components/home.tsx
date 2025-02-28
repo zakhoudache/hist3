@@ -18,9 +18,9 @@ const Home = ({
     setActiveFilter(filter);
   };
 
-  const handleSearch = (query: string) => {
+  const handleSearch = () => {
     // Placeholder for search functionality
-    console.log("Search query:", query);
+    console.log("Search requested");
   };
 
   const handleLayoutChange = (sizes: number[]) => {
@@ -30,9 +30,12 @@ const Home = ({
   return (
     <div className="h-screen w-full flex flex-col bg-gray-50">
       <TopToolbar
-        onFilterChange={handleFilterChange}
-        activeFilter={activeFilter}
         onSearch={handleSearch}
+        onFilter={() =>
+          handleFilterChange(activeFilter === "all" ? "person" : "all")
+        }
+        onExport={() => console.log("Export requested")}
+        onHelp={() => console.log("Help requested")}
       />
       <div className="flex-1 p-4">
         <MainLayout

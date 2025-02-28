@@ -3,16 +3,19 @@ import { useKnowledgeGraph } from "./hooks/useKnowledgeGraph";
 import { useZoomControls } from "./hooks/useZoomControls";
 import GraphRenderer from "./components/GraphRenderer";
 import GraphControls from "./components/GraphControls";
+import GraphSidebar from "./components/GraphSidebar";
 import NodeDialog from "./components/NodeDialog";
 import EdgeDialog from "./components/EdgeDialog";
 import ConfirmDeleteDialog from "./components/ConfirmDeleteDialog";
 import EdgeCreationIndicator from "./components/EdgeCreationIndicator";
 import { Node, Edge } from "./types";
-import { exportGraphToPDF } from "@/utils/pdfExport";
+// PDF export will be implemented later
 
 interface KnowledgeGraphProps {
   nodes?: Node[];
   edges?: Edge[];
+  filteredNodes?: Node[];
+  filteredEdges?: Edge[];
   onNodeSelect?: (nodeId: string) => void;
   onNodeCreate?: (node: Node) => void;
   onNodeUpdate?: (node: Node) => void;
@@ -25,6 +28,8 @@ interface KnowledgeGraphProps {
 const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
   nodes,
   edges,
+  filteredNodes,
+  filteredEdges,
   onNodeSelect = () => {},
   onNodeCreate = () => {},
   onNodeUpdate = () => {},
@@ -36,6 +41,10 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
   // Canvas dimensions
   const width = 800;
   const height = 600;
+
+  // Use filtered nodes/edges if provided, otherwise use the original nodes/edges
+  const actualNodes = filteredNodes || nodes;
+  const actualEdges = filteredEdges || edges;
 
   // Use custom hooks for state management
   const {
@@ -77,8 +86,8 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
     createNewEdge,
     handleCancelEdgeCreation,
   } = useKnowledgeGraph(
-    nodes,
-    edges,
+    actualNodes,
+    actualEdges,
     onNodeSelect,
     onNodeCreate,
     onNodeUpdate,
@@ -115,6 +124,9 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
           setShowNodeDialog(true);
         }}
       />
+
+      {/* Sidebar with additional controls */}
+      <GraphSidebar nodes={nodeList} edges={edgeList} />
 
       {/* Edge Creation Indicator */}
       {edgeCreationState.source && (

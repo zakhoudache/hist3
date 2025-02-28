@@ -49,6 +49,9 @@ import {
   Workflow,
   Maximize,
   Minimize,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
 } from "lucide-react";
 import KnowledgeGraph from "./KnowledgeGraph";
 import { createClient } from "@supabase/supabase-js";
@@ -158,7 +161,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
   // Component state
   const [text, setText] = useState(initialContent);
   const [selectedTab, setSelectedTab] = useState<
-    "write" | "preview" | "analyze" | "graph"
+    "write" | "preview" | "analyze" | "graph" | "flashcards"
   >("write");
   const [editMode, setEditMode] = useState<"rich" | "markdown">("rich");
   const [fontSize, setFontSize] = useState(16);
@@ -183,6 +186,8 @@ const TextEditor: React.FC<TextEditorProps> = ({
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [edgeList, setEdgeList] = useState<Edge[]>([]);
   const [graphLoading, setGraphLoading] = useState(false);
+  const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
+  const [showFlashcardAnswer, setShowFlashcardAnswer] = useState(false);
 
   // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -267,6 +272,61 @@ const TextEditor: React.FC<TextEditorProps> = ({
       onEdgesChange(edgeList);
     }
   }, [edgeList, onEdgesChange]);
+
+  // Generate flashcards from entity data
+  const generateFlashcards = () => {
+    if (entities.length === 0) return [];
+
+    const flashcards = [];
+
+    // Add entity type flashcards
+    for (const entity of entities.slice(0, 5)) {
+      flashcards.push({
+        question: `What type of entity is "${entity.text}"?`,
+        answer: `"${entity.text}" is a ${entity.type}.`,
+      });
+    }
+
+    // Add relationship flashcards if we have edges
+    if (edgeList.length > 0) {
+      for (const edge of edgeList.slice(0, 3)) {
+        const sourceNode = nodeList.find((n) => n.id === edge.source);
+        const targetNode = nodeList.find((n) => n.id === edge.target);
+        if (sourceNode && targetNode) {
+          flashcards.push({
+            question: `What is the relationship between "${sourceNode.label}" and "${targetNode.label}"?`,
+            answer: `"${sourceNode.label}" ${edge.relationship || "is connected to"} "${targetNode.label}".`,
+          });
+        }
+      }
+    }
+
+    // Add general knowledge flashcards based on entities
+    for (const entity of entities.slice(0, 3)) {
+      flashcards.push({
+        question: `Describe "${entity.text}" in your own words.`,
+        answer:
+          entity.metadata?.description ||
+          `"${entity.text}" is a ${entity.type} mentioned in the text.`,
+      });
+    }
+
+    return flashcards;
+  };
+
+  const handleNextFlashcard = () => {
+    setShowFlashcardAnswer(false);
+    const flashcards = generateFlashcards();
+    setCurrentFlashcardIndex((prev) => (prev + 1) % flashcards.length);
+  };
+
+  const handlePrevFlashcard = () => {
+    setShowFlashcardAnswer(false);
+    const flashcards = generateFlashcards();
+    setCurrentFlashcardIndex(
+      (prev) => (prev - 1 + flashcards.length) % flashcards.length,
+    );
+  };
 
   // Text analysis handler
   const handleAnalyze = useCallback(async () => {
@@ -694,6 +754,10 @@ const TextEditor: React.FC<TextEditorProps> = ({
             <TabsTrigger value="graph" className="flex items-center gap-1">
               <Workflow size={16} />
               <span>Knowledge Graph</span>
+            </TabsTrigger>
+            <TabsTrigger value="flashcards" className="flex items-center gap-1">
+              <BookOpen size={16} />
+              <span>Flashcards</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1205,6 +1269,79 @@ const TextEditor: React.FC<TextEditorProps> = ({
                 </div>
               )}
             </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="flashcards" className="p-0">
+          <Card>
+            <CardContent className="p-6">
+              {entities.length > 0 ? (
+                <div className="flex flex-col h-full">
+                  <div className="flex-grow flex items-center justify-center">
+                    <div className="w-full max-w-md bg-white rounded-lg border p-6 shadow-sm transition-all transform hover:shadow-md">
+                      <div className="text-sm text-gray-500 mb-2 flex justify-between">
+                        <span>
+                          Flashcard {currentFlashcardIndex + 1} of{" "}
+                          {generateFlashcards().length}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setShowFlashcardAnswer(!showFlashcardAnswer)
+                          }
+                        >
+                          {showFlashcardAnswer ? "Hide Answer" : "Show Answer"}
+                        </Button>
+                      </div>
+                      <div className="min-h-[200px] flex flex-col">
+                        <h3 className="text-lg font-medium mb-4">
+                          {generateFlashcards()[currentFlashcardIndex]
+                            ?.question || "No question available"}
+                        </h3>
+                        {showFlashcardAnswer && (
+                          <div className="mt-auto pt-4 border-t">
+                            <p className="text-gray-700">
+                              {generateFlashcards()[currentFlashcardIndex]
+                                ?.answer || "No answer available"}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePrevFlashcard}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleNextFlashcard}
+                    >
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-grow flex items-center justify-center text-muted-foreground">
+                  <div className="text-center">
+                    <BookOpen className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                    <p>No entities detected to create flashcards.</p>
+                    <p className="mt-2">
+                      Go to the "Analyze" tab to detect entities first.
+                    </p>
+                    <Button className="mt-4" onClick={handleAnalyze}>
+                      Analyze Text
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
