@@ -19,13 +19,13 @@ serve(async (req) => {
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const prompt = `Extract entities (people, events, places) and their relationships from the following text. Return them in JSON format with the following structure:
+    const prompt = `Extract entities (people, events,  terms, places) and their relationships from the following text. Return them in JSON format with the following structure:
     {
       "entities": [
         {
           "id": "unique-id",
           "text": "entity name",
-          "type": "person|event|place|document|concept",
+          "type": "person|event|place|terms|document|concept",
           "confidence": 0.9,
           "offsets": [{"start": 0, "end": 10}],
           "metadata": {
